@@ -1,4 +1,5 @@
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
+// Entry point: importa tutto e inizializza al caricamento.
 import './controls.js';
 import './library.js';
 import { updateUI }           from './ui.js';
@@ -11,6 +12,7 @@ import { playTrack }          from './player.js';
 document.getElementById('search-input').oninput = (e) => {
     const val = e.target.value.toLowerCase();
 
+    // Filtra libreria locale
     document.querySelectorAll('.folder-group').forEach(g => {
         let has = false;
         g.querySelectorAll('.track-item').forEach(tr => {
@@ -21,46 +23,36 @@ document.getElementById('search-input').oninput = (e) => {
         g.style.display = has ? 'block' : 'none';
     });
 
+    // Ricerca YT con debounce
     scheduleYTSearch(val, 500);
 };
 
-// ─── Now-playing title: click → apri; swipe → prev/next/open/close ───────────
-// PUNTO 4
-(function setupNowPlayingSwipe() {
-    const el = document.getElementById('now-playing-title');
-    if (!el) return;
+// ─── Now-playing → apri player espanso ───────────────────────────────────────
+document.getElementById('now-playing-title').onclick = () => togglePlayer(true);
 
-    let sX = 0, sY = 0;
-    const H_THRESH = 50;   // px orizzontale
-    const V_THRESH = 40;   // px verticale
+const nowTitle = document.getElementById('now-playing-title');
 
-    el.addEventListener('touchstart', e => {
-        sX = e.touches[0].clientX;
-        sY = e.touches[0].clientY;
-    }, { passive: true });
+let sX=0, sY=0;
 
-    el.addEventListener('touchend', e => {
-        const dX = e.changedTouches[0].clientX - sX;
-        const dY = e.changedTouches[0].clientY - sY;
-        const aX = Math.abs(dX), aY = Math.abs(dY);
+nowTitle.addEventListener('touchstart', e => {
+    sX = e.touches[0].clientX;
+    sY = e.touches[0].clientY;
+}, { passive: true });
 
-        if (aX < 10 && aY < 10) {
-            // Tap semplice → apri expanded player (comportamento originale)
-            togglePlayer(true);
-            return;
-        }
+nowTitle.addEventListener('touchend', e => {
+    const dX = e.changedTouches[0].clientX - sX;
+    const dY = e.changedTouches[0].clientY - sY;
+    const t = 50;
 
-        if (aY > aX) {
-            // Gesto verticale prevalente
-            if (dY < -V_THRESH) togglePlayer(true);   // su → apri
-            if (dY >  V_THRESH) togglePlayer(false);  // giù → chiudi
-        } else {
-            // Gesto orizzontale prevalente
-            if (dX >  H_THRESH) document.getElementById('btn-prev').click(); // destra → prev
-            if (dX < -H_THRESH) document.getElementById('btn-next').click(); // sinistra → next
-        }
-    }, { passive: true });
-})();
+    if (Math.abs(dX) > Math.abs(dY)) {
+        if (dX < -t) document.getElementById('btn-next').click();
+        if (dX >  t) document.getElementById('btn-prev').click();
+    } else {
+        if (dY < -t) togglePlayer(true);
+        if (dY >  t) togglePlayer(false);
+    }
+}, { passive: true });
+
 
 // ─── Globali per compatibilità onclick inline nel DOM ────────────────────────
 window._playTrack = playTrack;
@@ -72,4 +64,3 @@ window.onload = () => {
     renderPlaylists();
     setupExpandedSwipe();
 };
-
