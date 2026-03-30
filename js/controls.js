@@ -50,7 +50,7 @@ document.getElementById('btn-next').onclick = () => {
         playItem(next);
         return;
     }
-    let nextIdx = state.lastManualLibraryIdx + 1;
+    let nextIdx = state.currentPlayingIdx + 1;
     if (state.isShuffle) nextIdx = Math.floor(Math.random() * state.playlist.length);
     if (nextIdx < state.playlist.length) playTrack(nextIdx);
 };
