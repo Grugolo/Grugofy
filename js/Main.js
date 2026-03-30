@@ -1,11 +1,11 @@
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-import './controls.js';
-import './library.js';
-import { updateUI }           from './ui.js';
-import { renderPlaylists }    from './queue.js';
-import { setupExpandedSwipe, togglePlayer } from './expandedPlayer.js';
-import { scheduleYTSearch }   from './ytApi.js';
-import { playTrack }          from './player.js';
+import './Controls.js';
+import './Library.js';
+import { updateUI }           from './Ui.js';
+import { renderPlaylists }    from './Queue.js';
+import { setupExpandedSwipe, togglePlayer } from './ExpandedPlayer.js';
+import { scheduleYTSearch }   from './YtApi.js';
+import { playTrack }          from './Player.js';
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 document.getElementById('search-input').oninput = (e) => {
