@@ -6,10 +6,6 @@ import { playItem }   from './ytApi.js';
 
 const queueListEl = document.getElementById('queue-list');
 
-// ─── Drag-to-reorder state ────────────────────────────────────────────────────
-let dragState = null;
-// dragState = { idx, startY, currentY, itemH, placeholder, clone }
-
 // ─── Queue ────────────────────────────────────────────────────────────────────
 
 export function renderQueue() {
@@ -19,169 +15,74 @@ export function renderQueue() {
 
     state.queue.forEach((t, i) => {
         const item  = document.createElement('div');
-        item.className = 'queue-item';
-        item.dataset.qidx = i;
-
         const title = t.type === 'youtube' ? t.title : t.file.name;
 
         item.innerHTML = `
-            <div class="queue-drag-handle" data-drag="${i}" touch-action="none">
-                <div class="drag-lines"></div>
-            </div>
             <div style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:0.85rem;">${escapeHtml(title)}</div>
             <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
                 <div data-rem="${i}">${DRAW.x}</div>
+                <div data-move="${i},-1">${i > 0 ? DRAW.up : ''}</div>
+                <div data-move="${i},1">${i < state.queue.length - 1 ? DRAW.down : ''}</div>
+                <div class="drag-handle" data-drag="${i}">☰</div>
             </div>`;
 
-        item.querySelector(`[data-rem="${i}"]`).addEventListener('click', () => remQ(i));
-
-        // Setup drag handle
-        const handle = item.querySelector('[data-drag]');
-        setupDragHandle(handle, i);
+        item.querySelector(`[data-move="${i},-1"]`)?.addEventListener('click', () => moveQ(i, -1));
+        item.querySelector(`[data-move="${i},1"]`)?.addEventListener('click',  () => moveQ(i,  1));
+        item.querySelector(`[data-rem="${i}"]`)?.addEventListener('click',     () => remQ(i));
 
         queueListEl.appendChild(item);
     });
-}
+    
+    
+    let dragIdx = null;
 
-// ─── Drag-to-reorder ──────────────────────────────────────────────────────────
-
-function setupDragHandle(handle, idx) {
-    handle.addEventListener('touchstart', onDragStart, { passive: false });
-}
-
-function onDragStart(e) {
-    e.stopPropagation();   // non propagare all'expanded-player o allo scroll
-    e.preventDefault();
-
-    const handle  = e.currentTarget;
-    const idx     = parseInt(handle.dataset.drag);
-    const item    = handle.closest('.queue-item');
-    const rect    = item.getBoundingClientRect();
-    const itemH   = rect.height;
-    const startY  = e.touches[0].clientY;
-
-    // Crea placeholder
-    const placeholder = document.createElement('div');
-    placeholder.className = 'queue-placeholder';
-    placeholder.style.height = itemH + 'px';
-
-    // Crea clone visivo
-    const clone = item.cloneNode(true);
-    clone.style.cssText = `
-        position: fixed;
-        left: ${rect.left}px;
-        top: ${rect.top}px;
-        width: ${rect.width}px;
-        height: ${itemH}px;
-        z-index: 9999;
-        opacity: 0.92;
-        pointer-events: none;
-        border-radius: 8px;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.6);
-        background: #2e2e2e;
-        display: flex;
-        align-items: center;
-        padding: 10px 15px;
-        gap: 12px;
-        transition: none;
-    `;
-
-    // Nascondi item originale, inserisci placeholder
-    item.style.visibility = 'hidden';
-    item.parentElement.insertBefore(placeholder, item);
-
-    document.body.appendChild(clone);
-
-    dragState = { idx, startY, currentY: startY, itemH, placeholder, clone, item };
-
-    document.addEventListener('touchmove', onDragMove, { passive: false });
-    document.addEventListener('touchend',  onDragEnd,  { passive: true });
-}
-
-function onDragMove(e) {
-    if (!dragState) return;
-    e.preventDefault();
+queueListEl.addEventListener('touchstart', e => {
+    const el = e.target.closest('[data-drag]');
+    if (!el) return;
+    dragIdx = parseInt(el.dataset.drag);
     e.stopPropagation();
+}, { passive:false });
+
+queueListEl.addEventListener('touchmove', e => {
+    if (dragIdx === null) return;
+    e.preventDefault();
 
     const touch = e.touches[0];
-    dragState.currentY = touch.clientY;
-    const dy = dragState.currentY - dragState.startY;
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    const item = target?.closest('[data-idx]');
 
-    // Muovi il clone
-    const origRect = dragState.item.getBoundingClientRect();
-    dragState.clone.style.top = (origRect.top + dy) + 'px';
+    if (!item) return;
 
-    // Calcola la nuova posizione nella lista
-    const items   = [...queueListEl.querySelectorAll('.queue-item')];
-    const cloneY  = dragState.clone.getBoundingClientRect().top + dragState.itemH / 2;
+    const overIdx = [...queueListEl.children].indexOf(item);
 
-    let targetIdx = dragState.idx;
-    items.forEach((el, i) => {
-        if (el === dragState.item) return;
-        const r = el.getBoundingClientRect();
-        const mid = r.top + r.height / 2;
-        if (cloneY > mid) targetIdx = parseInt(el.dataset.qidx);
-    });
-
-    // Sposta il placeholder visivamente
-    const currentPlaceholder = queueListEl.querySelector('.queue-placeholder');
-    if (targetIdx !== dragState.idx) {
-        const targetEl = queueListEl.querySelector(`[data-qidx="${targetIdx}"]`);
-        if (targetEl) {
-            // inserisci dopo targetEl se stiamo andando giù, prima se stiamo andando su
-            if (targetIdx > dragState.idx) {
-                targetEl.after(currentPlaceholder);
-            } else {
-                targetEl.before(currentPlaceholder);
-            }
-        }
+    if (overIdx !== dragIdx) {
+        const moved = state.queue.splice(dragIdx, 1)[0];
+        state.queue.splice(overIdx, 0, moved);
+        dragIdx = overIdx;
+        renderQueue();
     }
+}, { passive:false });
+
+queueListEl.addEventListener('touchend', () => {
+    dragIdx = null;
+});
+    
+    
 }
 
-function onDragEnd(e) {
-    if (!dragState) return;
-    document.removeEventListener('touchmove', onDragMove);
-    document.removeEventListener('touchend',  onDragEnd);
-
-    const { idx, clone, placeholder, item } = dragState;
-
-    // Calcola indice finale in base alla posizione del placeholder
-    const allItems = [...queueListEl.querySelectorAll('.queue-item')];
-    const phIndex  = [...queueListEl.children].indexOf(placeholder);
-    let newIdx = 0;
-    let count = 0;
-    for (let i = 0; i < queueListEl.children.length; i++) {
-        const child = queueListEl.children[i];
-        if (child === placeholder) break;
-        if (child.classList.contains('queue-item')) count++;
-    }
-    newIdx = count;
-
-    // Rimuovi clone e placeholder
-    clone.remove();
-    placeholder.remove();
-    item.style.visibility = '';
-
-    dragState = null;
-
-    // Riordina la coda
-    if (newIdx !== idx) {
-        const moved = state.queue.splice(idx, 1)[0];
-        state.queue.splice(newIdx, 0, moved);
-        if (navigator.vibrate) navigator.vibrate(20);
-    }
-
+function moveQ(i, d) {
+    [state.queue[i], state.queue[i + d]] = [state.queue[i + d], state.queue[i]];
     renderQueue();
 }
-
-// ─── Rimozione ────────────────────────────────────────────────────────────────
 
 function remQ(i) {
     state.queue.splice(i, 1);
     renderQueue();
 }
 
-window.remQ = remQ;
+// Esposti globalmente per compatibilità con eventuali chiamate inline rimaste
+window.moveQ = moveQ;
+window.remQ  = remQ;
 
 // ─── Salva coda come playlist ─────────────────────────────────────────────────
 document.getElementById('save-playlist-btn').onclick = () => {
@@ -268,6 +169,6 @@ function deletePlaylist(name) {
     renderPlaylists();
 }
 
+// Globali per retrocompatibilità
 window.loadP = loadPlaylist;
 window.delP  = deletePlaylist;
-
