@@ -1,7 +1,7 @@
 // ─── LIBRARY ──────────────────────────────────────────────────────────────────
-import { state }      from './State.js';
-import { showToast }  from './Utils.js';
-import { playTrack }  from './Player.js';
+import { state }      from './state.js';
+import { showToast }  from './utils.js';
+import { playTrack }  from './player.js';
 
 const libraryEl = document.getElementById('library');
 const input     = document.getElementById('folderInput');
