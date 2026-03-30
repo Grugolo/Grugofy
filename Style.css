@@ -1,0 +1,296 @@
+
+        :root {
+            --primary: #1db954;
+            --bg: #0f0f0f;
+            --card: #1e1e1e;
+            --text: #ffffff;
+            --text-dim: #b3b3b3;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; padding: 0;
+            display: flex; flex-direction: column;
+            height: 100vh; overflow: hidden;
+        }
+
+        header {
+            padding: 30px 15px 15px;
+            background: linear-gradient(to bottom, #282828, var(--bg));
+            display: flex; align-items: center; gap: 10px;
+            z-index: 10;
+        }
+
+        .custom-file-upload {
+            background: var(--primary);
+            color: black;
+            padding: 10px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--primary);
+            font-weight: bold;
+            font-size: 0.8rem;
+            white-space: nowrap;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        input[type="file"] { display: none; }
+
+        #search-input {
+            flex-grow: 1;
+            padding: 10px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--primary);
+            background: #222;
+            color: #fff;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            padding-bottom: 220px;
+        }
+
+        .section-title {
+            font-size: 0.8rem; margin: 20px 0 10px;
+            color: var(--primary); text-transform: uppercase; letter-spacing: 1px;
+        }
+
+        /* ── Queue items con drag handle ─────────────────────────────────────── */
+        .queue-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 12px 12px 0;
+            background: #1a1a1a;
+            border-bottom: 1px solid #2a2a2a;
+            gap: 4px;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .queue-item:first-child  { border-radius: 15px 15px 0 0; }
+        .queue-item:last-child   { border-radius: 0 0 15px 15px; border-bottom: none; margin-bottom: 15px; }
+        .queue-item:only-child   { border-radius: 15px; margin-bottom: 15px; }
+
+        /* Placeholder durante il drag */
+        .queue-placeholder {
+            background: rgba(29, 185, 84, 0.08);
+            border: 1px dashed var(--primary);
+            border-radius: 6px;
+            margin: 2px 0;
+        }
+
+        /* Drag handle: tre linee orizzontali */
+        .queue-drag-handle {
+            width: 36px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            flex-shrink: 0;
+            touch-action: none;
+        }
+
+        .queue-drag-handle:active { cursor: grabbing; }
+
+        .drag-lines {
+            width: 18px;
+            height: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .drag-lines::before,
+        .drag-lines::after,
+        .drag-lines {
+            position: relative;
+        }
+
+        /* Tre linee via box-shadow */
+        .drag-lines {
+            background: transparent;
+            border-top: 2px solid #666;
+            border-bottom: 2px solid #666;
+            position: relative;
+        }
+        .drag-lines::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            width: 100%;
+            height: 2px;
+            background: #666;
+        }
+
+        /* Playlists salvate (stile invariato) */
+        #saved-playlists-list > div {
+            display: flex; align-items: center;
+            padding: 12px; background: #1a1a1a;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        #saved-playlists-list > div:first-child { border-radius: 15px 15px 0 0; }
+        #saved-playlists-list > div:last-child   { border-radius: 0 0 15px 15px; border-bottom: none; margin-bottom: 15px; }
+        #saved-playlists-list > div:only-child   { border-radius: 15px; }
+
+        /* ── Libreria ──────────────────────────────────────────────────────────── */
+        .folder-group { background: var(--card); border-radius: 12px; margin-bottom: 15px; overflow: hidden; }
+        .folder-name { background: #2a2a2a; padding: 10px 15px; font-weight: bold; font-size: 0.75rem; color: var(--primary); cursor: pointer; }
+
+        .track-item {
+            display: flex; align-items: center; padding: 10px 15px;
+            gap: 12px; border-bottom: 1px solid #2a2a2a;
+            background: var(--card); transition: transform 0.2s ease;
+            position: relative;
+        }
+
+        #library .track-item.playing { 
+            border-left: 5px solid var(--primary) !important; 
+            background: #252525 !important; 
+        }
+
+        #library .track-item.last-pos { 
+            border-left: 5px solid #4a9e6a !important;
+            background: #1c2a22 !important;
+        }
+
+        .track-cover {
+            width: 45px; height: 45px;
+            border-radius: 6px; background: #333;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; overflow: hidden;
+        }
+        .track-cover img { width: 100%; height: 100%; object-fit: cover; }
+
+        .track-info { flex: 1; min-width: 0; cursor: pointer; }
+        .track-name { 
+            display: block; white-space: nowrap; overflow: hidden; 
+            text-overflow: ellipsis; font-size: 0.9rem; font-weight: bold;
+        }
+
+        .track-meta-row {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.7rem; color: var(--text-dim); margin-top: 2px;
+        }
+
+        .file-format {
+            text-transform: uppercase; font-weight: bold;
+            color: #888; background: rgba(255,255,255,0.05);
+            padding: 1px 4px; border-radius: 3px;
+        }
+
+        .file-format.yt-badge {
+            color: #fff;
+            background: rgba(255, 0, 0, 0.25);
+            border: 1px solid rgba(255, 0, 0, 0.3);
+        }
+
+        /* ── Player bar ────────────────────────────────────────────────────────── */
+        #player-bar {
+            position: fixed; bottom: 0; width: 100%;
+            background: rgba(18, 18, 18, 0.98); backdrop-filter: blur(15px);
+            border-top: 1px solid #333; padding: 15px; z-index: 1100;
+        }
+
+        .progress-container { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+        input[type="range"] { flex: 1; accent-color: var(--primary); height: 4px; cursor: pointer; }
+        .time-label { font-size: 0.7rem; min-width: 35px; color: var(--text-dim); font-family: monospace; }
+
+        .controls { display: flex; justify-content: center; align-items: center; gap: 25px; }
+        .ctrl-btn {
+            width: 50px; height: 50px; border: none;
+            background: transparent;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: white;
+        }
+        .btn-main { 
+            width: 65px !important; 
+            height: 65px !important; 
+            min-width: 65px !important;
+            min-height: 65px !important;
+            background: #fff; 
+            color: #000; 
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .btn-loop-indicator { border-radius: 10px; width: 45px; height: 45px; }
+
+        /* ── Expanded player ───────────────────────────────────────────────────── */
+        #expanded-player {
+            position: fixed; top: 100%; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 1000; 
+            transition: top 0.3s ease;
+            display: flex; flex-direction: column;
+            touch-action: none;
+        }
+
+        .close-indicator {
+            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+            opacity: 0.3;
+            cursor: pointer; pointer-events: auto;
+            z-index: 1005; padding: 20px;
+        }
+
+        #expanded-player.open { top: 0; }
+
+        #visual-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        #visual-container video, #visual-container img {
+            max-width: 100%; max-height: 80vh; pointer-events: none;
+        }
+
+        /* ── Skeleton loader YT ────────────────────────────────────────────────── */
+        .yt-skeleton {
+            background: #1a1a1a;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+        .yt-skeleton-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 15px; border-bottom: 1px solid #2a2a2a;
+        }
+        .yt-skeleton-item:last-child { border-bottom: none; }
+        .skel-cover {
+            width: 45px; height: 45px; border-radius: 6px;
+            background: linear-gradient(90deg, #2a2a2a 25%, #333 50%, #2a2a2a 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.2s infinite;
+            flex-shrink: 0;
+        }
+        .skel-info { flex: 1; }
+        .skel-line {
+            height: 10px; border-radius: 5px;
+            background: linear-gradient(90deg, #2a2a2a 25%, #333 50%, #2a2a2a 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.2s infinite;
+            margin-bottom: 6px;
+        }
+        .skel-line.short { width: 55%; }
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
