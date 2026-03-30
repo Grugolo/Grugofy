@@ -47,7 +47,7 @@
 </main>
 
 <div id="player-bar">
-    <div id="now-playing-title" style="text-align:center; font-weight:bold; margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.9rem; touch-action:none;">Seleziona un brano</div>
+    <div id="now-playing-title" style="text-align:center; font-weight:bold; margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.9rem;">Seleziona un brano</div>
     
     <div class="progress-container">
         <span class="time-label" id="time-current">0:00</span>
@@ -69,23 +69,11 @@
 <div id="yt-player" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;"></div>
 
 <div id="expanded-player">
-    <div class="close-indicator">
-        <div style="width:20px; height:4px; background:#fff; border-radius:2px; transform: rotate(10deg) translateX(4px); display:inline-block;"></div>
-        <div style="width:20px; height:4px; background:#fff; border-radius:2px; transform: rotate(-10deg) translateX(-4px); display:inline-block;"></div>
-    </div>
     <div id="visual-container"></div>
 </div>
     
-<script>
-  // Placeholder sincrono, verrà sovrascritto dal modulo
-  window.onYouTubeIframeAPIReady = function() {
-    window._ytApiReadyQueue = true;
-  };
-</script>
-<script src="https://www.youtube.com/iframe_api"></script>
 <script type="module" src="js/main.js"></script>    
     
 
 </body>
 </html>
-
