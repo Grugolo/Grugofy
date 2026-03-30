@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Grugofy</title>
+    
+    <link rel="stylesheet" href="style.css">
+    
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+</head>
+<body>
+
+<header>
+    <label class="custom-file-upload">
+        <input id="folderInput" type="file" webkitdirectory multiple accept="audio/*, video/*">
+        CARICA
+    </label>
+    <input type="text" id="search-input" placeholder="Cerca brano...">
+</header>
+
+<main id="content">
+    <div id="queue-section" style="display:none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div class="section-title" style="margin:0">In Coda</div>
+            <button id="save-playlist-btn" style="background:var(--primary); border:none; border-radius:20px; padding:5px 12px; font-weight:bold; font-size:0.7rem; cursor:pointer;">SALVA CODA</button>
+        </div>
+        <div id="queue-list"></div>
+    </div>
+
+    <div id="playlist-manager">
+       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div class="section-title" style="margin:0">Playlist Salvate</div>
+            <button id="save-history-btn" style="background:var(--primary); border:none; border-radius:20px; padding:5px 12px; font-weight:bold; font-size:0.7rem; cursor:pointer;">SALVA CRONOLOGIA</button>
+       </div>
+       <div id="saved-playlists-list"></div>
+    </div>
+    
+    <div id="yt-section" style="display:none;">
+        <div class="section-title">YouTube</div>
+        <div id="youtube-results"></div>
+    </div>
+    
+    <div class="section-title">Libreria</div>
+    <div id="library"></div>
+</main>
+
+<div id="player-bar">
+    <div id="now-playing-title" style="text-align:center; font-weight:bold; margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.9rem; touch-action:none;">Seleziona un brano</div>
+    
+    <div class="progress-container">
+        <span class="time-label" id="time-current">0:00</span>
+        <input type="range" id="seek-slider" value="0" max="100">
+        <span class="time-label" id="time-total">0:00</span>
+    </div>
+
+    <div class="controls">
+        <div class="ctrl-btn btn-loop-indicator" id="btn-shuffle"></div>
+        <div class="ctrl-btn" id="btn-prev"></div>
+        <div class="ctrl-btn btn-main" id="btn-play"></div>
+        <div class="ctrl-btn" id="btn-next"></div>
+        <div class="ctrl-btn btn-loop-indicator" id="btn-loop"></div>
+    </div>
+</div>
+
+<video id="main-audio" style="display:none;"></video>
+
+<div id="yt-player" style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:none;"></div>
+
+<div id="expanded-player">
+    <div class="close-indicator">
+        <div style="width:20px; height:4px; background:#fff; border-radius:2px; transform: rotate(10deg) translateX(4px); display:inline-block;"></div>
+        <div style="width:20px; height:4px; background:#fff; border-radius:2px; transform: rotate(-10deg) translateX(-4px); display:inline-block;"></div>
+    </div>
+    <div id="visual-container"></div>
+</div>
+    
+<script>
+  // Placeholder sincrono, verrà sovrascritto dal modulo
+  window.onYouTubeIframeAPIReady = function() {
+    window._ytApiReadyQueue = true;
+  };
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script type="module" src="js/main.js"></script>    
+    
+
+</body>
+</html>
+
