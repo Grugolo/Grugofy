@@ -1,8 +1,8 @@
 // ─── PLAYER ───────────────────────────────────────────────────────────────────
-import { state }      from './State.js';
-import { updateUI }   from './Ui.js';
-import { formatTime } from './Utils.js';
-import { updateExpandedView } from './ExpandedPlayer.js';
+import { state }      from './state.js';
+import { updateUI }   from './ui.js';
+import { formatTime } from './utils.js';
+import { updateExpandedView } from './expandedPlayer.js';
 
 const audio       = document.getElementById('main-audio');
 const seekSlider  = document.getElementById('seek-slider');
