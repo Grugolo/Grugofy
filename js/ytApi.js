@@ -1,7 +1,7 @@
 // ─── YOUTUBE ──────────────────────────────────────────────────────────────────
-import { YT_API_KEY }        from './Config.js';
-import { state }             from './State.js';
-import { updateUI }          from './Ui.js';
+import { YT_API_KEY }        from './config.js';
+import { state }             from './state.js';
+import { updateUI }          from './ui.js';
 import { escapeHtml, formatTime, parseISO8601Duration, showToast } from './utils.js';
 import { playTrack }         from './player.js';
 import { stopYTSeekPolling, startYTSeekPolling, updateExpandedView } from './expandedPlayer.js';
