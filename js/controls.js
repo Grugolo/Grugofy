@@ -1,9 +1,9 @@
 // ─── CONTROLS ─────────────────────────────────────────────────────────────────
-import { state }     from './State.js';
-import { updateUI }  from './Ui.js';
-import { playTrack } from './Player.js';
-import { playItem }  from './YtApi.js';
-import { renderQueue } from './Queue.js';
+import { state }     from './state.js';
+import { updateUI }  from './ui.js';
+import { playTrack } from './player.js';
+import { playItem }  from './ytApi.js';
+import { renderQueue } from './queue.js';
 
 const audio   = document.getElementById('main-audio');
 const playBtn = document.getElementById('btn-play');
