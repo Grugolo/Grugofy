@@ -4,7 +4,7 @@ import { state }             from './state.js';
 import { updateUI }          from './ui.js';
 import { escapeHtml, formatTime, parseISO8601Duration, showToast } from './utils.js';
 import { playTrack }         from './player.js';
-import { stopYTSeekPolling, startYTSeekPolling, updateExpandedView } from './expandedPlayer.js';
+import { stopYTSeekPolling, startYTSeekPolling } from './expandedPlayer.js';
 
 const audio           = document.getElementById('main-audio');
 const nowPlayingTitle = document.getElementById('now-playing-title');
@@ -12,21 +12,31 @@ const playBtn         = document.getElementById('btn-play');
 
 // ─── IFrame API ───────────────────────────────────────────────────────────────
 
+/** Chiamato automaticamente dall'API YT quando lo script è pronto */
 window.onYouTubeIframeAPIReady = function () {
     state.ytPlayer = new YT.Player('yt-player', {
         height: '1', width: '1', videoId: '',
         playerVars: { playsinline: 1, autoplay: 1 },
         events: {
             onReady: () => {
-                state.ytReady = true;
-                if (state.ytPendingVideoId) {
-                    state.ytPlayer.loadVideoById(state.ytPendingVideoId);
-                    state.ytPendingVideoId = null;
-                    setTimeout(() => state.ytPlayer?.playVideo?.(), 300);
-                }
-            },
+    state.ytReady = true;
+
+    if (state.ytPendingVideoId) {
+        state.ytPlayer.loadVideoById(state.ytPendingVideoId);
+
+        setTimeout(() => {
+            try {
+                state.ytPlayer.playVideo();
+            } catch(e) {
+                console.warn('YT play failed:', e);
+            }
+        }, 500);
+
+        state.ytPendingVideoId = null;
+    }
+},
+            
             onStateChange: (e) => {
-                // PUNTO 2: quando il video YT finisce, vai al prossimo
                 if (e.data === YT.PlayerState.ENDED) {
                     document.getElementById('btn-next').click();
                 }
@@ -40,8 +50,10 @@ window.onYouTubeIframeAPIReady = function () {
 
 // ─── playItem (locale o YT) ───────────────────────────────────────────────────
 
+/** Riproduce un item, sia locale che YouTube */
 export function playItem(item) {
     if (item.type === 'youtube') {        
+        // Ferma e svuota l'audio locale per evitare che intercetti i controlli
         audio.pause();
         audio.src = '';
 
@@ -58,19 +70,32 @@ export function playItem(item) {
         });
 
         if (state.ytReady && state.ytPlayer) {
+            if (!state.ytPlayer) {
+    state.ytPendingVideoId = item.id;
+    return;
+            }
             state.ytPlayer.loadVideoById(item.id);
+            // playVideo esplicito dopo un tick: necessario quando autoplay è bloccato dal browser
             setTimeout(() => state.ytPlayer?.playVideo?.(), 300);
         } else {
             state.ytPendingVideoId = item.id;
-            if (!document.getElementById('yt-iframe-api')) {
-                const tag = document.createElement('script');
-                tag.id  = 'yt-iframe-api';
-                tag.src = 'https://www.youtube.com/iframe_api';
-                document.head.appendChild(tag);
-            }
-        }
+            // Carica lo script IFrame API se non ancora presente
+if (!window.YT && !document.getElementById('yt-iframe-api')) {
+    const tag = document.createElement('script');
+    tag.id  = 'yt-iframe-api';
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+}
+      }
 
-        // PUNTO 3: MediaSession con prev/next anche per YT
+        // MediaSession per YT
+        navigator.mediaSession.setActionHandler('play', () => {
+    state.ytPlayer?.playVideo();
+});
+
+navigator.mediaSession.setActionHandler('pause', () => {
+    state.ytPlayer?.pauseVideo();
+});
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
                 title:   item.title,
@@ -79,13 +104,9 @@ export function playItem(item) {
             });
             navigator.mediaSession.setActionHandler('previoustrack', () => document.getElementById('btn-prev').click());
             navigator.mediaSession.setActionHandler('nexttrack',     () => document.getElementById('btn-next').click());
-            navigator.mediaSession.setActionHandler('play',  () => { state.ytPlayer?.playVideo?.(); });
-            navigator.mediaSession.setActionHandler('pause', () => { state.ytPlayer?.pauseVideo?.(); });
         }
 
         updateUI();
-        // FIX punto 1: aggiorna la vista espansa senza forzare apertura
-        updateExpandedView();
         startYTSeekPolling();
         return;
     }
@@ -93,15 +114,12 @@ export function playItem(item) {
     // File locale
     state.currentYTId = null;
     stopYTSeekPolling();
-
-    // Rimetti l'iframe YT al body nascosto
+    // Rimetti l'iframe YT al posto nascosto originale
     const ytEl = document.getElementById('yt-player');
-    if (ytEl && ytEl.parentElement !== document.body) {
-        document.body.appendChild(ytEl);
-    }
+    if (ytEl && !document.body.contains(ytEl)) document.body.appendChild(ytEl);
     if (ytEl) ytEl.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
+    // Ferma il player YT se attivo
     if (state.ytReady && state.ytPlayer) state.ytPlayer.stopVideo?.();
-
     const idx = state.playlist.indexOf(item);
     playTrack(idx);
 }
@@ -110,6 +128,7 @@ export function playItem(item) {
 
 let ytSearchDebounce = null;
 
+/** Avvia la ricerca con debounce (usato dal modulo search) */
 export function scheduleYTSearch(query, delayMs = 500) {
     clearTimeout(ytSearchDebounce);
     ytSearchDebounce = setTimeout(() => searchYouTube(query), delayMs);
@@ -126,6 +145,7 @@ async function searchYouTube(q) {
         return;
     }
 
+    // Skeleton loader
     section.style.display = 'block';
     container.innerHTML = `
         <div class="yt-skeleton">
@@ -253,9 +273,9 @@ function setupYTSwipe(el, idx) {
             const video = state.ytResults[idx];
             if (cX > 0) { state.queue.unshift(video); showToast('In cima ↑'); }
             else         { state.queue.push(video);    showToast('In fondo ↓'); }
+            // renderQueue importato dinamicamente per evitare dipendenza circolare
             import('./queue.js').then(m => m.renderQueue());
         }
         cX = 0;
     };
 }
-
