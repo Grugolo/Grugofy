@@ -1,6 +1,6 @@
 // ─── EXPANDED PLAYER ─────────────────────────────────────────────────────────
-import { state }      from './state.js';
-import { showToast, formatTime } from './utils.js';
+import { state }      from './State.js';
+import { showToast, formatTime } from './Utils.js';
 
 const audio = document.getElementById('main-audio');
 let lastTap = 0;
