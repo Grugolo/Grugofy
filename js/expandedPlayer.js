@@ -61,7 +61,9 @@ export function updateExpandedView(idx) {
     if (state.currentYTId) {
         stopYTSeekPolling();
 
-        vContainer.innerHTML = '';
+        [...vContainer.children].forEach(child => {
+    if (child.id !== 'yt-player') child.remove();
+});
 
         if (ytEl) {
             ytEl.style.cssText = `
