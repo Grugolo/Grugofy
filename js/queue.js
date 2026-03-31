@@ -50,8 +50,6 @@ export function renderQueue() {
             <div style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:0.85rem;">${escapeHtml(title)}</div>
             <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
                 <div data-rem="${i}">${DRAW.x}</div>
-                <div data-move-up="${i}">${i > 0 ? DRAW.up : ''}</div>
-                <div data-move-down="${i}">${i < state.queue.length - 1 ? DRAW.down : ''}</div>
                 <div class="drag-handle" data-drag="${i}">☰</div>
             </div>`;
 
