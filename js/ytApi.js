@@ -94,12 +94,10 @@ export function playItem(item) {
     // ── File locale ───────────────────────────────────────────────────────────
     state.currentYTId = null;
     stopYTSeekPolling();
-
-    // Rimetti #yt-player nel body nascosto
+    
+    // ── Youtube ──────────────────────────────────────────────────────────────
     const ytEl = document.getElementById('yt-player');
-    if (ytEl && !document.body.contains(ytEl)) document.body.appendChild(ytEl);
     if (ytEl) ytEl.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
-
     if (state.ytReady && state.ytPlayer) state.ytPlayer.stopVideo?.();
 
     const idx = state.playlist.indexOf(item);
