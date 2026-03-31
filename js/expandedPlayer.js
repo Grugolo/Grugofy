@@ -55,31 +55,52 @@ export function updateExpandedView(idx) {
     const vContainer = document.getElementById('visual-container');
     if (!vContainer) return;
 
+    const ytEl = document.getElementById('yt-player');
+
     // ── Caso YT ───────────────────────────────────────────────────────────────
     if (state.currentYTId) {
+        stopYTSeekPolling();
+
         vContainer.innerHTML = '';
-        const ytEl = document.getElementById('yt-player');
+
         if (ytEl) {
-            // BUG FIX: unico cssText, no doppia assegnazione
-            ytEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;opacity:1;pointer-events:auto;';
-            vContainer.appendChild(ytEl);
+            ytEl.style.cssText = `
+                position:absolute;
+                top:0;
+                left:0;
+                width:100%;
+                height:100%;
+                opacity:1;
+                pointer-events:auto;
+            `;
+
+            if (!vContainer.contains(ytEl)) {
+                vContainer.appendChild(ytEl);
+            }
         }
+
         return;
     }
 
     // ── Caso locale ───────────────────────────────────────────────────────────
     stopYTSeekPolling();
 
-    // Rimetti yt-player nel body se era nel vContainer
-    const ytEl = document.getElementById('yt-player');
-    if (ytEl && vContainer.contains(ytEl)) {
-        document.body.appendChild(ytEl);
-        ytEl.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
+
+    if (ytEl) {
+        ytEl.style.cssText = `
+            position:absolute;
+            width:1px;
+            height:1px;
+            opacity:0;
+            pointer-events:none;
+        `;
     }
 
     vContainer.innerHTML = '';
+
     const resolvedIdx = (idx !== undefined) ? idx : state.currentPlayingIdx;
     if (resolvedIdx === -1) return;
+
     const track = state.playlist[resolvedIdx];
     if (!track) return;
 
@@ -93,7 +114,7 @@ export function updateExpandedView(idx) {
         img.src = track.cover || 'https://placehold.co/512x512';
         img.style.cssText = 'width:85%;border-radius:15px;';
         vContainer.appendChild(img);
-        document.body.appendChild(audio);
+
         audio.style.display = 'none';
     }
 }
