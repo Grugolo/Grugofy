@@ -38,15 +38,28 @@ export function stopYTSeekPolling() {
 /** Apre o chiude il player espanso */
 export function togglePlayer(open) {
     const p = document.getElementById('expanded-player');
+    const ytWrapper = document.getElementById('yt-wrapper');
+
     if (!p) return;
+
     const hasYT    = !!state.currentYTId;
     const hasLocal = state.currentPlayingIdx !== -1;
+
     if (open && (hasYT || hasLocal)) {
         updateExpandedView();
         p.classList.add('open');
+
+        if (hasYT && ytWrapper) {
+            ytWrapper.classList.add('active');
+        }
+
     } else {
         p.classList.remove('open');
         stopYTSeekPolling();
+
+        if (ytWrapper) {
+            ytWrapper.classList.remove('active');
+        }
     }
 }
 
@@ -58,45 +71,25 @@ export function updateExpandedView(idx) {
     const ytEl = document.getElementById('yt-player');
 
     // ── Caso YT ───────────────────────────────────────────────────────────────
-    if (state.currentYTId) {
-        stopYTSeekPolling();
+const ytWrapper = document.getElementById('yt-wrapper');
 
-        [...vContainer.children].forEach(child => {
-    if (child.id !== 'yt-player') child.remove();
-});
-
-        if (ytEl) {
-            ytEl.style.cssText = `
-                position:absolute;
-                top:0;
-                left:0;
-                width:100%;
-                height:100%;
-                opacity:1;
-                pointer-events:auto;
-            `;
-
-            if (!vContainer.contains(ytEl)) {
-                vContainer.appendChild(ytEl);
-            }
-        }
-
-        return;
-    }
-
-    // ── Caso locale ───────────────────────────────────────────────────────────
+if (state.currentYTId) {
     stopYTSeekPolling();
 
+    // Pulisci container SENZA toccare YT
+    vContainer.innerHTML = '';
 
-    if (ytEl) {
-        ytEl.style.cssText = `
-            position:absolute;
-            width:1px;
-            height:1px;
-            opacity:0;
-            pointer-events:none;
-        `;
+    if (ytWrapper) {
+        ytWrapper.classList.add('active');
     }
+
+    return;
+}
+
+    // ── Caso locale ───────────────────────────────────────────────────────────
+if (ytWrapper) {
+    ytWrapper.classList.remove('active');
+}
 
     vContainer.innerHTML = '';
 
