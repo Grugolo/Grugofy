@@ -123,8 +123,8 @@ export function renderPlaylists() {
         div.innerHTML = `
             <div style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:0.85rem;">${escapeHtml(name)}</div>
             <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
-                <div data-load style="color:var(--primary);font-weight:bold;font-size:0.7rem;cursor:pointer;">CARICA</div>
-                <div data-del>${DRAW.x}</div>
+              <div data-del>${DRAW.x}</div>
+              <div data-load style="color:var(--primary);font-weight:bold;font-size:0.7rem;cursor:pointer;">CARICA</div>
             </div>`;
 
         div.querySelector('[data-load]').onclick = () => loadPlaylist(name);
