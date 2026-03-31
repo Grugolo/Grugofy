@@ -18,13 +18,24 @@ window.onYouTubeIframeAPIReady = function () {
         events: {
             onReady: () => {
                 state.ytReady = true;
-                if (state.ytPendingVideoId) {
-                    state.ytPlayer.loadVideoById(state.ytPendingVideoId);
-                    setTimeout(() => {
-                        try { state.ytPlayer.playVideo(); } catch (e) { console.warn('YT play failed:', e); }
-                    }, 500);
-                    state.ytPendingVideoId = null;
-                }
+if (state.ytPendingVideoId) {
+    state.ytPlayer.loadVideoById(state.ytPendingVideoId);
+
+    const waitReady = setInterval(() => {
+        try {
+            const dur = state.ytPlayer.getDuration();
+
+            if (dur && dur > 0) {
+                clearInterval(waitReady);
+
+                state.ytPlayer.playVideo();
+                startYTSeekPolling();
+            }
+        } catch (_) {}
+    }, 100);
+
+    state.ytPendingVideoId = null;
+}
             },
             onStateChange: (e) => {
                 if (e.data === YT.PlayerState.ENDED) {
@@ -48,14 +59,17 @@ function ensureYTScript() {
 
 // ─── playItem ─────────────────────────────────────────────────────────────────
 export function playItem(item) {
+    import { updateExpandedView } from './expandedPlayer.js';
+    
     if (item.type === 'youtube') {
         // Ferma audio locale
         audio.pause();
         audio.src = '';
 
-        state.currentYTId = item.id;
-        nowPlayingTitle.textContent = item.title;
-
+state.currentYTId = item.id;
+nowPlayingTitle.textContent = item.title;
+updateExpandedView();
+        
         // Highlight risultati YT
         document.querySelectorAll('#youtube-results .track-item').forEach(el => {
             const v = state.ytResults[parseInt(el.dataset.ytIdx)];
@@ -64,11 +78,28 @@ export function playItem(item) {
             el.style.background = playing ? '#252525' : '#1a1a1a';
         });
 
-        if (state.ytReady && state.ytPlayer) {
-            state.ytPlayer.loadVideoById(item.id);
-            // BUG FIX: rimosso il check ridondante !state.ytPlayer dentro questo ramo
-            setTimeout(() => state.ytPlayer?.playVideo?.(), 300);
-        } else {
+if (state.ytReady && state.ytPlayer) {
+    state.ytPlayer.loadVideoById(item.id);
+
+    const waitReady = setInterval(() => {
+        try {
+            const dur = state.ytPlayer.getDuration();
+
+            if (dur && dur > 0) {
+                clearInterval(waitReady);
+
+                state.ytPlayer.playVideo();
+
+
+                startYTSeekPolling();
+            }
+        } catch (_) {}
+    }, 100);
+
+} else {
+    state.ytPendingVideoId = item.id;
+    ensureYTScript();
+} else {
             state.ytPendingVideoId = item.id;
             ensureYTScript();
         }
