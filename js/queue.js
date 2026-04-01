@@ -35,6 +35,16 @@ queueListEl.addEventListener('touchmove', e => {
 queueListEl.addEventListener('touchend', () => { dragIdx = null; });
 
 // ─── Queue ────────────────────────────────────────────────────────────────────
+
+export function safeLoadPlaylists() {
+    try {
+        return safeLoadPlaylists();
+    } catch {
+        return {};
+    }
+}
+
+
 export function renderQueue() {
     queueListEl.innerHTML = '';
     document.getElementById('queue-section').style.display =
@@ -78,7 +88,7 @@ window.remQ  = remQ;
 document.getElementById('save-playlist-btn').onclick = () => {
     const n = prompt('Nome Playlist:', 'Playlist ' + new Date().toLocaleDateString());
     if (!n || !state.queue.length) return;
-    const all = JSON.parse(localStorage.getItem('f_p') || '{}');
+    const all = safeLoadPlaylists();
     all[n] = state.queue.map(x =>
         x.type === 'youtube'
             ? { yt: true, id: x.id, title: x.title, thumb: x.thumb }
@@ -98,9 +108,9 @@ document.getElementById('save-history-btn').onclick = () => {
     const endH     = now.getHours() + diffDays * 24;
     const endM     = now.getMinutes().toString().padStart(2, '0');
     const dateStr  = `${state.startTime.getDate()}/${state.startTime.getMonth() + 1}/${state.startTime.getFullYear().toString().slice(-2)}`;
-    const name     = `${dateStr} ${startH}:${startM}-${endH}:${endM}`;
+    const name     = prompt('Nome playlist: ' + dateStr +' '+ startH+':'+startM +' - '+ endH +':'+ endM);
 
-    const all = JSON.parse(localStorage.getItem('f_p') || '{}');
+    const all = safeLoadPlaylists();
     all[name] = state.playHistory.map(idx => {
         const t = state.playlist[idx];
         if (t && t.type === 'youtube') return { yt: true, id: t.id, title: t.title };
@@ -115,7 +125,7 @@ document.getElementById('save-history-btn').onclick = () => {
 // ─── Playlist salvate ─────────────────────────────────────────────────────────
 export function renderPlaylists() {
     const listEl = document.getElementById('saved-playlists-list');
-    const all    = JSON.parse(localStorage.getItem('f_p') || '{}');
+    const all    = safeLoadPlaylists();
     listEl.innerHTML = '';
 
     Object.keys(all).forEach(name => {
@@ -134,7 +144,7 @@ export function renderPlaylists() {
 }
 
 function loadPlaylist(name) {
-    const all = JSON.parse(localStorage.getItem('f_p') || '{}');
+    const all = safeLoadPlaylists();
     if (!all[name]) return;
     all[name].forEach(s => {
         if (s.yt) {
@@ -153,7 +163,7 @@ function loadPlaylist(name) {
 
 function deletePlaylist(name) {
     if (!confirm('Elimina?')) return;
-    const all = JSON.parse(localStorage.getItem('f_p') || '{}');
+    const all = safeLoadPlaylists();
     delete all[name];
     localStorage.setItem('f_p', JSON.stringify(all));
     renderPlaylists();
