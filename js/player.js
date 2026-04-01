@@ -25,8 +25,15 @@ export function playTrack(idx, fromQueue = false, isBack = false) {
     state.currentPlayingIdx = idx;
     if (!fromQueue) state.lastManualLibraryIdx = idx;
 
-    const track = state.playlist[idx];
-    audio.play();
+const track = state.playlist[idx];
+
+if (currentObjectURL) {
+    URL.revokeObjectURL(currentObjectURL);
+}
+currentObjectURL = URL.createObjectURL(track.file);
+audio.src = currentObjectURL;
+
+audio.play(); // ✅ DOPO src
 
     nowPlayingTitle.textContent = track.file.name.replace(/\.[^/.]+$/, '');
     updateUI();
