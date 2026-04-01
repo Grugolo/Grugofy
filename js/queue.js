@@ -38,7 +38,7 @@ queueListEl.addEventListener('touchend', () => { dragIdx = null; });
 
 export function safeLoadPlaylists() {
     try {
-        return safeLoadPlaylists();
+        return JSON.parse(localStorage.getItem('f_p')) || {};
     } catch {
         return {};
     }
