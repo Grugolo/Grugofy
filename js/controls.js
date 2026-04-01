@@ -9,10 +9,9 @@ const audio   = document.getElementById('main-audio');
 const playBtn = document.getElementById('btn-play');
 
 // ─── Play / Pause ─────────────────────────────────────────────────────────────
-playBtn.onclick = () => {
-    // BUG FIX: guard typeof YT prima di usare YT.PlayerState
+playBtn.onclick = () => {    
     if (state.currentYTId && state.ytReady && state.ytPlayer) {
-        if (typeof YT === 'undefined') return;
+        if (!state.ytReady) return;
         const s = state.ytPlayer.getPlayerState();
         if (s === YT.PlayerState.PLAYING) { state.ytPlayer.pauseVideo(); return; }
         state.ytPlayer.playVideo();
