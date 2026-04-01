@@ -51,23 +51,111 @@ input.onchange = async (e) => {
 };
 
 // ─── Crea elemento DOM per una traccia ───────────────────────────────────────
-export function createTrackItem(file, path, idx) {
-    const item     = document.createElement('div');
-    const ext      = file.name.split('.').pop();
-    item.className = 'track-item';
-    item.dataset.idx = idx;
-    item.innerHTML = `
-        <div class="track-cover" id="cov-${idx}">🎵</div>
-        <div class="track-info" onclick="window._playTrack(${idx})">
-            <span class="track-name">${file.name.replace(/\.[^/.]+$/, '')}</span>
+export function createTrackItem(item, path, idx, isYT = false) {
+    const el = document.createElement('div');
+    el.className = 'track-item';
+    el.dataset.idx = idx;
+
+    let title, subtitle, format, duration;
+
+    if (isYT) {
+        title = item.title;
+        subtitle = item.uploader || 'YouTube';
+        format = 'YT';
+        duration = item.duration
+            ? Math.floor(item.duration / 60) + ':' + String(item.duration % 60).padStart(2, '0')
+            : '';
+    } else {
+        const file = item;
+        const ext = file.name.split('.').pop();
+
+        title = file.name.replace(/\.[^/.]+$/, '');
+        subtitle = path.split('/').pop();
+        format = ext;
+        duration = '...';
+    }
+
+    el.innerHTML = `
+        <div class="track-cover" id="cov-${idx}">
+            ${isYT ? `<img src="${item.thumb}">` : '🎵'}
+        </div>
+
+        <div class="track-info">
+            <span class="track-name">${title}</span>
             <div class="track-meta-row">
-                <span>${path.split('/').pop()}</span>
-                <span class="file-format">${ext}</span>
-                <span id="dur-${idx}" style="color:var(--primary);font-weight:bold;">...</span>
+                <span>${subtitle}</span>
+                <span class="file-format ${isYT ? 'yt-badge' : ''}">${format}</span>
+                <span style="color:var(--primary);font-weight:bold;">
+                    ${duration}
+                </span>
             </div>
-        </div>`;
-    setupSwipe(item, idx);
-    return item;
+        </div>
+    `;
+
+    // CLICK
+    el.querySelector('.track-info').onclick = () => {
+        if (isYT) {
+            import('./ytApi.js').then(m => m.playItem(item));
+        } else {
+            window._playTrack(idx);
+        }
+    };
+
+    // SWIPE (solo locale → ora anche YT)
+    setupSwipeGeneric(el, item, isYT);
+
+    return el;
+}
+
+function setupSwipeGeneric(el, item, isYT) {
+    let sX = 0, sY = 0, cX = 0, isSwipe = false;
+    const threshold = 50;
+
+    el.ontouchstart = e => {
+        sX = e.touches[0].clientX;
+        sY = e.touches[0].clientY;
+        isSwipe = false;
+        el.style.transition = 'none';
+    };
+
+    el.ontouchmove = e => {
+        const dX = e.touches[0].clientX - sX;
+        const dY = e.touches[0].clientY - sY;
+
+        if (!isSwipe) {
+            if (Math.abs(dX) > Math.abs(dY) && Math.abs(dX) > 10) isSwipe = true;
+            else if (Math.abs(dY) > 10) return;
+        }
+
+        if (isSwipe) {
+            e.preventDefault();
+            cX = dX * 0.5;
+            el.style.transform = `translateX(${cX}px)`;
+
+            el.style.backgroundColor = cX > 0
+                ? `rgba(76,175,80,${Math.min(Math.abs(cX)/100,0.4)})`
+                : `rgba(33,150,243,${Math.min(Math.abs(cX)/100,0.4)})`;
+        }
+    };
+
+    el.ontouchend = () => {
+        el.style.transition = '0.4s cubic-bezier(0.18,0.89,0.32,1.28)';
+        el.style.transform = 'translateX(0)';
+        el.style.backgroundColor = '';
+
+        if (isSwipe && Math.abs(cX) > threshold) {
+            if (navigator.vibrate) navigator.vibrate(30);
+
+            const { state } = require('./state.js'); // oppure import dinamico
+
+            if (cX > 0) state.queue.unshift(item);
+            else state.queue.push(item);
+
+            import('./queue.js').then(m => m.renderQueue());
+        }
+
+        cX = 0;
+    };
 }
 
 // ─── Cover ────────────────────────────────────────────────────────────────────
