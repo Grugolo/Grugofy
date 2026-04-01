@@ -10,6 +10,8 @@ const timeCurrent     = document.getElementById('time-current');
 const timeTotal       = document.getElementById('time-total');
 const nowPlayingTitle = document.getElementById('now-playing-title');
 
+let currentObjectURL = null;
+
 /** Riproduce la traccia locale all'indice idx */
 export function playTrack(idx, fromQueue = false, isBack = false) {
     if (idx < 0 || idx >= state.playlist.length) return;
@@ -24,13 +26,19 @@ export function playTrack(idx, fromQueue = false, isBack = false) {
     if (!fromQueue) state.lastManualLibraryIdx = idx;
 
     const track = state.playlist[idx];
-    audio.src = URL.createObjectURL(track.file);
     audio.play();
 
     nowPlayingTitle.textContent = track.file.name.replace(/\.[^/.]+$/, '');
     updateUI();
     updateExpandedView(idx);
     setupMediaSession(track, nowPlayingTitle.textContent);
+
+    if (currentObjectURL) {
+        URL.revokeObjectURL(currentObjectURL);
+        }
+    currentObjectURL = URL.createObjectURL(track.file);
+    audio.src = currentObjectURL;
+    
 }
 
 function setupMediaSession(track, title) {
@@ -48,8 +56,10 @@ function setupMediaSession(track, title) {
 
 // ─── Seekbar ──────────────────────────────────────────────────────────────────
 audio.ontimeupdate = () => {
-    seekSlider.value        = (audio.currentTime / audio.duration) * 100 || 0;
-    timeCurrent.textContent = formatTime(audio.currentTime);
+seekSlider.value = audio.duration
+    ? (audio.currentTime / audio.duration) * 100
+    : 0;
+timeCurrent.textContent = formatTime(audio.currentTime);
     if (audio.duration) timeTotal.textContent = formatTime(audio.duration);
 };
 
