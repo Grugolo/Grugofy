@@ -33,18 +33,16 @@ if (currentObjectURL) {
 currentObjectURL = URL.createObjectURL(track.file);
 audio.src = currentObjectURL;
 
-audio.play(); // ✅ DOPO src
+audio.play();
 
     nowPlayingTitle.textContent = track.file.name.replace(/\.[^/.]+$/, '');
     updateUI();
     updateExpandedView(idx);
     setupMediaSession(track, nowPlayingTitle.textContent);
 
-    if (currentObjectURL) {
-        URL.revokeObjectURL(currentObjectURL);
-        }
-    currentObjectURL = URL.createObjectURL(track.file);
-    audio.src = currentObjectURL;
+    seekSlider.value = 0;
+    timeCurrent.textContent = '0:00';
+    timeTotal.textContent = '0:00';
     
 }
 
