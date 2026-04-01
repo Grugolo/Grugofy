@@ -25,12 +25,17 @@ window.onYouTubeIframeAPIReady = function () {
                     state.ytPendingVideoId = null;
                 }
             },
-            onStateChange: (e) => {
-                if (e.data === YT.PlayerState.ENDED) {
-                    document.getElementById('btn-next').click();
-                }
-                updateUI();
-            },
+onStateChange: (e) => {
+    if (e.data === YT.PlayerState.PLAYING) {
+        startYTSeekPolling();
+    }
+
+    if (e.data === YT.PlayerState.ENDED) {
+        document.getElementById('btn-next').click();
+    }
+
+    updateUI();
+}
         },
     });
 };
@@ -68,18 +73,6 @@ function loadYTVideo(videoId) {
     if (!state.ytPlayer) return;
 
     state.ytPlayer.loadVideoById(videoId);
-
-    const waitReady = setInterval(() => {
-        try {
-            const dur = state.ytPlayer.getDuration();
-            if (dur && dur > 0) {
-                clearInterval(waitReady);
-
-                state.ytPlayer.playVideo();
-                startYTSeekPolling();
-            }
-        } catch (_) {}
-    }, 100);
 }
 
 // ─── playItem ─────────────────────────────────────────────────────────────────
