@@ -108,6 +108,9 @@ export async function extractCover(file, idx) {
             },
         });
     }
+
+    img.onload = () => URL.revokeObjectURL(imageUrl);
+    
 }
 
 // ─── Durata ───────────────────────────────────────────────────────────────────
