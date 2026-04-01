@@ -211,30 +211,14 @@ async function searchYouTube(q) {
 }
 
 // ─── RENDER ───────────────────────────────────────────────────────────────────
+import { createTrackItem } from './library.js';
+
 function renderYouTubeResults(results) {
     const container = document.getElementById('youtube-results');
     container.innerHTML = '';
 
     results.forEach((video, i) => {
-        const el = document.createElement('div');
-        el.className = 'track-item';
-        el.dataset.ytIdx = i;
-
-        const durStr = video.duration ? formatTime(video.duration) : '';
-
-        el.innerHTML = `
-            <div class="track-cover">
-                <img src="${video.thumb}">
-            </div>
-            <div class="track-info" data-play-yt="${i}">
-                <span>${escapeHtml(video.title)}</span>
-                <div>
-                    <span>${escapeHtml(video.uploader)}</span>
-                    ${durStr ? `<span>${durStr}</span>` : ''}
-                </div>
-            </div>`;
-
-        el.querySelector('[data-play-yt]').onclick = () => playItem(video);
+        const el = createTrackItem(video, '', i, true);
         container.appendChild(el);
     });
 }
