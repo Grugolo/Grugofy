@@ -1,77 +1,83 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Grugofy</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Grugofy</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 </head>
 <body>
 
 <header>
-    <label class="custom-file-upload">
-        <input id="folderInput" type="file" webkitdirectory multiple accept="audio/*, video/*">
-        CARICA
-    </label>
-    <input type="text" id="search-input" placeholder="Cerca brano...">
+  <label class="btn-upload">
+    <input id="folderInput" type="file" webkitdirectory multiple accept="audio/*,video/*">
+    CARICA
+  </label>
+  <div class="search-wrapper">
+  <input type="text" id="searchInput" placeholder="Cerca brano…" autocomplete="off">
+  <button id="clearSearchBtn">✕</button>
+</div>
 </header>
 
-<main id="content">
-    <div id="queue-section" style="display:none;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <div class="section-title" style="margin:0">In Coda</div>
-            <button id="save-playlist-btn" style="background:var(--primary); border:none; border-radius:20px; padding:5px 12px; font-weight:bold; font-size:0.7rem; cursor:pointer;">SALVA CODA</button>
-        </div>
-        <div id="queue-list"></div>
-    </div>
+<main id="mainContent">
 
-    <div id="playlist-manager">
-       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <div class="section-title" style="margin:0">Playlist Salvate</div>
-            <button id="save-history-btn" style="background:var(--primary); border:none; border-radius:20px; padding:5px 12px; font-weight:bold; font-size:0.7rem; cursor:pointer;">SALVA CRONOLOGIA</button>
-       </div>
-       <div id="saved-playlists-list"></div>
+  <section id="queueSection" hidden>
+    <div class="section-header">
+      <span class="section-title">In Coda</span>
+      <button id="saveQueueBtn" class="pill-btn">SALVA CODA</button>
     </div>
+    <div id="queueList"></div>
+  </section>
 
-    <div id="yt-section" style="display:none;">
-        <div class="section-title">YouTube</div>
-        <div id="youtube-results"></div>
+  <section id="playlistSection">
+    <div class="section-header">
+      <span class="section-title">Playlist Salvate</span>
+      <button id="saveHistoryBtn" class="pill-btn">SALVA CRONOLOGIA</button>
     </div>
+    <div id="playlistList"></div>
+  </section>
 
-    <div class="section-title">Libreria</div>
-    <div id="library"></div>
+  <section id="ytSection" hidden>
+    <span class="section-title">YouTube</span>
+    <div id="ytResults"></div>
+  </section>
+
+  <span class="section-title">Libreria</span>
+  <div id="library"></div>
+
 </main>
 
-<div id="player-bar">
-    <div id="now-playing-title" style="text-align:center; font-weight:bold; margin-bottom:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.9rem;">Seleziona un brano</div>
+<!-- Player bar fissa -->
+<div id="playerBar">
+  <div id="nowPlayingTitle">Seleziona un brano</div>
 
-    <div class="progress-container">
-        <span class="time-label" id="time-current">0:00</span>
-        <input type="range" id="seek-slider" value="0" max="100">
-        <span class="time-label" id="time-total">0:00</span>
-    </div>
+  <div class="progress-row">
+    <span class="time-label" id="timeCurrent">0:00</span>
+    <input type="range" id="seekSlider" value="0" max="100">
+    <span class="time-label" id="timeTotal">0:00</span>
+  </div>
 
-    <div class="controls">
-        <div class="ctrl-btn btn-loop-indicator" id="btn-shuffle"></div>
-        <div class="ctrl-btn" id="btn-prev"></div>
-        <div class="ctrl-btn btn-main" id="btn-play"></div>
-        <div class="ctrl-btn" id="btn-next"></div>
-        <div class="ctrl-btn btn-loop-indicator" id="btn-loop"></div>
-    </div>
+  <div class="controls">
+    <button class="ctrl-btn icon-btn" id="btnShuffle" aria-label="Shuffle"></button>
+    <button class="ctrl-btn icon-btn" id="btnPrev"    aria-label="Precedente"></button>
+    <button class="ctrl-btn btn-play" id="btnPlay"    aria-label="Play/Pausa"></button>
+    <button class="ctrl-btn icon-btn" id="btnNext"    aria-label="Successivo"></button>
+    <button class="ctrl-btn icon-btn" id="btnLoop"    aria-label="Loop"></button>
+  </div>
 </div>
 
-<video id="main-audio" style="display:none;"></video>
+<!-- Elemento audio/video nascosto -->
+<video id="mediaEl" playsinline style="display:none"></video>
 
-<div id="expanded-player">
-    <div id="visual-container"></div>
-
-    <div id="yt-wrapper">
-        <div id="yt-player"></div>
-    </div>
+<!-- Player espanso -->
+<div id="expandedPlayer">
+  <div id="visualContainer"></div>
+  <div id="ytWrapper">
+    <div id="ytPlayerEl"></div>
+  </div>
 </div>
 
 <script type="module" src="js/main.js"></script>
-
 </body>
 </html>
