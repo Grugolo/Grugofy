@@ -1,10 +1,10 @@
 // ── localFiles.js ────────────────────────────────────────────────
 // Caricamento cartella, estrazione cover/durata, creazione track item DOM.
 
-import { store }    from '../core/store.js';
-import { playLocal } from '../core/player.js';
-import { enqueue }   from '../core/queue.js';
-import { escHtml }   from '../utils.js';
+import { store }                 from '../core/store.js';
+import { playLocal }             from '../core/player.js';
+import { enqueue }               from '../core/queue.js';
+import { escHtml, decodeHtml }   from '../utils.js';
 
 const libraryEl = document.getElementById('library');
 const input     = document.getElementById('folderInput');
