@@ -13,7 +13,7 @@ const ytResults = document.getElementById('ytResults');
 /* ── Ricerca con debounce ───────────────────────────────────────── */
 let _debounce = null;
 
-export function scheduleYTSearch(query, delayMs = 500) {
+export function scheduleYTSearch(query, delayMs = 600) {
   clearTimeout(_debounce);
   _debounce = setTimeout(() => _search(query), delayMs);
 }
