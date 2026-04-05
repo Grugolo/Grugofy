@@ -5,8 +5,8 @@ import { YT_API_KEY }    from '../config.js';
 import { store }         from '../core/store.js';
 import { playYT }        from '../core/player.js';
 import { makeTrackEl }   from './localFiles.js';
-import { parseISO8601, escHtml } from '../utils.js';
-
+import { parseISO8601, escHtml, decodeHtml } from '../utils.
+  
 const ytSection = document.getElementById('ytSection');
 const ytResults = document.getElementById('ytResults');
 
@@ -69,10 +69,10 @@ async function _search(q) {
     store.ytResults = items.map(item => ({
       type:     'youtube',
       id:       item.id.videoId,
-      title:    item.snippet.title,
+      title:    decodeHtml(item.snippet.title),
       thumb:    item.snippet.thumbnails?.medium?.url || '',
       duration: durationMap[item.id.videoId] || 0,
-      uploader: item.snippet.channelTitle || 'YouTube',
+      uploader: decodeHtml(item.snippet.channelTitle || 'YouTube'),
     }));
 
     _renderResults(store.ytResults);
