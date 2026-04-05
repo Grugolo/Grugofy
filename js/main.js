@@ -1,61 +1,82 @@
-// ─── MAIN ─────────────────────────────────────────────────────────────────────
-import './controls.js';
-import './library.js';
-import { updateUI }                      from './ui.js';
-import { renderPlaylists }               from './queue.js';
-import { setupExpandedSwipe, togglePlayer } from './expandedPlayer.js';
-import { scheduleYTSearch }              from './ytApi.js';
-import { playTrack }                     from './player.js';
+// ── main.js ──────────────────────────────────────────────────────
+// Entry point. Importa i moduli e collega le interazioni globali
+// che non appartengono a nessun modulo specifico.
 
-// ─── Search ───────────────────────────────────────────────────────────────────
-document.getElementById('search-input').oninput = (e) => {
-    const val = e.target.value.toLowerCase();
+// Side-effect imports (registrano event listener all'import)
+import './modules/localFiles.js';
+import './ui/controls.js';
 
-    document.querySelectorAll('.folder-group').forEach(g => {
-        let has = false;
-        g.querySelectorAll('.track-item').forEach(tr => {
-            const match = tr.textContent.toLowerCase().includes(val);
-            tr.style.display = match ? 'flex' : 'none';
-            if (match) has = true;
-        });
-        g.style.display = has ? 'block' : 'none';
+// Funzioni da usare in questo modulo
+import { updateUI }                         from './ui/controls.js';
+import { renderPlaylists, renderQueue }     from './ui/queueUI.js';
+import { setupExpandedSwipe, togglePlayer } from './ui/expandedPlayer.js';
+import { scheduleYTSearch }                 from './modules/youtube.js';
+import { playLocal }                        from './core/player.js';
+
+/* ── Barra di ricerca ───────────────────────────────────────────── */
+const searchInput = document.getElementById('searchInput');
+const clearBtn    = document.getElementById('clearSearchBtn');
+
+searchInput.addEventListener('input', e => {
+  const val = e.target.value.toLowerCase();
+
+  clearBtn.classList.toggle('active', val.length > 0);
+
+  // Filtra tracce in libreria
+  document.querySelectorAll('.folder-group').forEach(group => {
+    let visible = false;
+    group.querySelectorAll('.track-item').forEach(item => {
+      const match = item.textContent.toLowerCase().includes(val);
+      item.style.display = match ? 'flex' : 'none';
+      if (match) visible = true;
     });
+    group.style.display = visible ? '' : 'none';
+  });
 
-    scheduleYTSearch(val, 500);
+  // Ricerca YouTube (con debounce interno)
+  scheduleYTSearch(val);
+});
+
+clearBtn.onclick = () => {
+  searchInput.value = '';
+  searchInput.dispatchEvent(new Event('input'));
+  searchInput.focus();
 };
 
-// ─── Now-playing title → apri expanded player ────────────────────────────────
-const nowTitle = document.getElementById('now-playing-title');
-nowTitle.onclick = () => togglePlayer(true);
+/* ── Now-playing title: click → espandi; swipe → prev/next ─────── */
+const titleEl = document.getElementById('nowPlayingTitle');
+titleEl.addEventListener('click', () => togglePlayer(true));
 
-let sX = 0, sY = 0;
-nowTitle.addEventListener('touchstart', e => {
-    sX = e.touches[0].clientX;
-    sY = e.touches[0].clientY;
+let _sx = 0, _sy = 0;
+titleEl.addEventListener('touchstart', e => {
+  _sx = e.touches[0].clientX;
+  _sy = e.touches[0].clientY;
 }, { passive: true });
 
-nowTitle.addEventListener('touchend', e => {
-    const dX = e.changedTouches[0].clientX - sX;
-    const dY = e.changedTouches[0].clientY - sY;
-    const t  = 50;
-    if (Math.abs(dX) > Math.abs(dY)) {
-        if (dX < -t) document.getElementById('btn-next').click();
-        if (dX >  t) document.getElementById('btn-prev').click();
-    } else {
-        if (dY < -t) togglePlayer(true);
-        if (dY >  t) togglePlayer(false);
-    }
+titleEl.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - _sx;
+  const dy = e.changedTouches[0].clientY - _sy;
+  const T  = 50;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx < -T) document.getElementById('btnNext').click();
+    if (dx >  T) document.getElementById('btnPrev').click();
+  } else {
+    if (dy < -T) togglePlayer(true);
+    if (dy >  T) togglePlayer(false);
+  }
 }, { passive: true });
 
-// ─── Globali per onclick inline nel DOM ──────────────────────────────────────
-window._playTrack    = playTrack;
-window.togglePlayer  = togglePlayer;
+/* ── Globali per eventuale uso futuro da console / estensioni ────── */
+window._playLocal   = playLocal;
+window.togglePlayer = togglePlayer;
 
-// ─── BUG FIX: DOMContentLoaded è già garantito con type=module, ma
-//     window.onload sovrascriveva handler di altri moduli caricati dopo.
-//     Usiamo addEventListener per non perdere handler precedenti.
+/* ── Inizializzazione ───────────────────────────────────────────── */
+// type=module garantisce esecuzione dopo il parsing del DOM,
+// ma window.load assicura che tutte le risorse siano pronte.
 window.addEventListener('load', () => {
-    updateUI();
-    renderPlaylists();
-    setupExpandedSwipe();
+  updateUI();
+  renderQueue();
+  renderPlaylists();
+  setupExpandedSwipe();
 });
+
