@@ -4,6 +4,7 @@
 
 import { store }     from './store.js';
 import { showToast } from '../utils.js';
+import { saveState } from './persist.js';
 
 const LS_KEY = 'f_p';
 
@@ -17,6 +18,7 @@ export function enqueue(item, top = false) {
   showToast(top ? 'In cima ↑' : 'In fondo ↓');
   if (navigator.vibrate) navigator.vibrate(30);
   _refreshQueueUI();
+   saveState();
 }
 
 /**
@@ -36,11 +38,13 @@ export function dequeueNext() {
     }
   });
   return true;
+   saveState();
 }
 
 export function removeFromQueue(i) {
   store.queue.splice(i, 1);
   _refreshQueueUI();
+   saveState();
 }
 
 export function reorderQueue(from, to) {
@@ -48,6 +52,7 @@ export function reorderQueue(from, to) {
   const [item] = store.queue.splice(from, 1);
   store.queue.splice(to, 0, item);
   _refreshQueueUI();
+   saveState();
 }
 
 /* ═══════════════════════════════════════════════════════════════════
