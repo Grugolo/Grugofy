@@ -1,11 +1,11 @@
 // ── youtube.js ───────────────────────────────────────────────────
 // Ricerca YouTube e avvio riproduzione YT.
 
-import { YT_API_KEY }    from '../config.js';
-import { store }         from '../core/store.js';
-import { playYT }        from '../core/player.js';
-import { makeTrackEl }   from './localFiles.js';
-import { parseISO8601, escHtml, decodeHtml } from '../utils.
+import { YT_API_KEY }                        from '../config.js';
+import { store }                             from '../core/store.js';
+import { playYT }                            from '../core/player.js';
+import { makeTrackEl }                       from './localFiles.js';
+import { parseISO8601, escHtml, decodeHtml } from '../utils.js';
   
 const ytSection = document.getElementById('ytSection');
 const ytResults = document.getElementById('ytResults');
