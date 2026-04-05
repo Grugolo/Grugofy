@@ -69,18 +69,33 @@ export function makeTrackEl(item, path, idx, isYT = false) {
     ? `${Math.floor(item.duration / 60)}:${String(item.duration % 60).padStart(2,'0')}`
     : '';
 
-  el.innerHTML = `
-    <div class="track-cover" id="cov-${isYT ? 'yt' : ''}${idx}">
-      ${isYT ? `<img src="${escHtml(item.thumb)}" alt="">` : '🎵'}
-    </div>
-    <div class="track-info">
-      <span class="track-name">${escHtml(title)}</span>
-      <div class="track-meta-row">
-        <span>${escHtml(subtitle)}</span>
-        <span class="file-format ${isYT ? 'yt' : ''}">${ext}</span>
-        <span style="color:var(--accent);font-weight:700;" id="dur-${isYT ? 'yt' : ''}${idx}">${durText}</span>
-      </div>
-    </div>`;
+const info = document.createElement('div');
+info.className = 'track-info';
+
+const nameEl = document.createElement('span');
+nameEl.className = 'track-name';
+nameEl.textContent = title;
+
+const meta = document.createElement('div');
+meta.className = 'track-meta-row';
+
+const sub = document.createElement('span');
+sub.textContent = subtitle;
+
+const format = document.createElement('span');
+format.className = 'file-format' + (isYT ? ' yt' : '');
+format.textContent = ext;
+
+const dur = document.createElement('span');
+dur.id = `dur-${isYT ? 'yt' : ''}${idx}`;
+dur.style.color = 'var(--accent)';
+dur.style.fontWeight = '700';
+dur.textContent = durText;
+
+meta.append(sub, format, dur);
+info.append(nameEl, meta);
+
+el.appendChild(info);
 
   // Click su track-info → riproduci
   el.querySelector('.track-info').addEventListener('click', () => {
