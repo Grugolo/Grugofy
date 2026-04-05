@@ -54,6 +54,7 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
   timeTotal.textContent       = '0:00';
 
   emit(EV.PLAYER_CHANGE);
+   saveState();
   emit(EV.VISUAL_UPDATE);
   _mediaSessionLocal(track, titleEl.textContent);
 }
@@ -91,6 +92,7 @@ export function playYT(item) {
   }
 
   emit(EV.PLAYER_CHANGE);
+   saveState();
   emit(EV.VISUAL_UPDATE);
   _mediaSessionYT(item);
 }
@@ -99,7 +101,7 @@ export function playYT(item) {
    CONTROLLI
    ═══════════════════════════════════════════════════════════════════ */
 
-saveState();
+
 
 export function togglePlay() {
   if (store.currentYTId) {
