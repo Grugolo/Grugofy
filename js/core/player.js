@@ -5,6 +5,7 @@
 import { store }       from './store.js';
 import { formatTime }  from '../utils.js';
 import { emit, EV }    from './events.js';
+import { saveState }   from './persist.js';
 
 export const mediaEl = document.getElementById('mediaEl');
 
@@ -98,6 +99,8 @@ export function playYT(item) {
    CONTROLLI
    ═══════════════════════════════════════════════════════════════════ */
 
+saveState();
+
 export function togglePlay() {
   if (store.currentYTId) {
     if (!store.ytReady || !store.ytPlayer) return;
@@ -153,11 +156,19 @@ export function playPrev() {
    EVENTI MEDIA ELEMENT
    ═══════════════════════════════════════════════════════════════════ */
 
+
+let _saveTimer = null;
 mediaEl.ontimeupdate = () => {
   if (!mediaEl.duration) return;
   seekSlider.value        = (mediaEl.currentTime / mediaEl.duration) * 100;
   timeCurrent.textContent = formatTime(mediaEl.currentTime);
   timeTotal.textContent   = formatTime(mediaEl.duration);
+  if (!_saveTimer) {
+    _saveTimer = setTimeout(() => {
+      saveState();
+      _saveTimer = null;
+    }, 1000);
+  }
 };
 
 mediaEl.onplay  = () => emit(EV.PLAYER_CHANGE);
@@ -218,7 +229,7 @@ function _ensureYTScript() {
 }
 
 function _fileTitle(file) {
-  return file.name.replace(/\.[^/.]+$/, '');
+  return file.name.replace(/\.[^/.]+$/_, '');
 }
 
 function _mediaSessionLocal(track, title) {
