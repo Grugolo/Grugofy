@@ -16,6 +16,13 @@ export function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+/** Decode HTML per visualizzare correttamente tutti i caratteri */
+export function decodeHtml(str) {
+  const txt = document.createElement('textarea');
+  txt.innerHTML = str;
+  return txt.value;
+}
+
 /** Toast centrato, auto-dismiss dopo 800 ms */
 export function showToast(msg) {
   const el = document.createElement('div');
@@ -25,7 +32,7 @@ export function showToast(msg) {
     'background:rgba(0,0,0,.85)', 'color:#fff',
     'padding:12px 25px', 'border-radius:30px',
     'font-size:.9rem', 'font-weight:700',
-    'border:1px solid var(--accent)', 'z-index:2000',
+    'border:0px solid var(--accent)', 'z-index:2000',
     'pointer-events:none', 'transition:opacity .3s ease',
     'text-align:center', 'box-shadow:0 4px 20px rgba(0,0,0,.5)',
   ].join(';');
