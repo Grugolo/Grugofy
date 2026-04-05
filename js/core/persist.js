@@ -9,6 +9,7 @@ export function saveState() {
     queue: store.queue.map(_serialize),
     current: {
       ytId: store.currentYTId,
+      title: document.getElementById('nowPlayingTitle').textContent,
       idx: store.currentIdx,
       time: _getTime(),
       paused: _isPaused(),
