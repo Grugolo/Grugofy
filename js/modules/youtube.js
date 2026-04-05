@@ -1,224 +1,117 @@
-// ─── YOUTUBE API ──────────────────────────────────────────────────────────────
-import { YT_API_KEY } from './config.js';
-import { state } from './state.js';
-import { updateUI } from './ui.js';
-import { escapeHtml, formatTime, parseISO8601Duration, showToast } from './utils.js';
-import { playTrack } from './player.js';
-import { stopYTSeekPolling, startYTSeekPolling, updateExpandedView } from './expandedPlayer.js';
+// ── youtube.js ───────────────────────────────────────────────────
+// Ricerca YouTube e avvio riproduzione YT.
 
-const audio = document.getElementById('main-audio');
-const nowPlayingTitle = document.getElementById('now-playing-title');
+import { YT_API_KEY }    from '../config.js';
+import { store }         from '../core/store.js';
+import { playYT }        from '../core/player.js';
+import { makeTrackEl }   from './localFiles.js';
+import { parseISO8601, escHtml } from '../utils.js';
 
-// ─── IFrame API ───────────────────────────────────────────────────────────────
-window.onYouTubeIframeAPIReady = function () {
-    state.ytPlayer = new YT.Player('yt-player', {
-        height: '1',
-        width: '1',
-        videoId: '',
-        playerVars: { playsinline: 1, autoplay: 1 },
-        events: {
-            onReady: () => {
-                state.ytReady = true;
+const ytSection = document.getElementById('ytSection');
+const ytResults = document.getElementById('ytResults');
 
-                if (state.ytPendingVideoId) {
-                    loadYTVideo(state.ytPendingVideoId);
-                    state.ytPendingVideoId = null;
-                }
-            },
-onStateChange: (e) => {
-    if (e.data === YT.PlayerState.PLAYING) {
-        startYTSeekPolling();
-    }
-
-    if (e.data === YT.PlayerState.ENDED) {
-        document.getElementById('btn-next').click();
-    }
-
-    updateUI();
-}
-        },
-    });
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function ensureYTScript() {
-    if (window.YT || document.getElementById('yt-iframe-api')) return;
-    const tag = document.createElement('script');
-    tag.id = 'yt-iframe-api';
-    tag.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(tag);
-}
-
-function showYTPlayer() {
-    const ytEl = document.getElementById('yt-player');
-    if (ytEl) {
-        ytEl.style.opacity = '1';
-        ytEl.style.pointerEvents = 'auto';
-    }
-}
-
-function hideYTPlayer() {
-    const ytEl = document.getElementById('yt-player');
-    if (ytEl) {
-        ytEl.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
-    }
-}
-
-function resetProgress() {
-    state.currentTime = 0;
-    state.duration = 0;
-}
-
-function loadYTVideo(videoId) {
-    if (!state.ytPlayer) return;
-
-    state.ytPlayer.loadVideoById(videoId);
-}
-
-// ─── playItem ─────────────────────────────────────────────────────────────────
-export function playItem(item) {
-    if (item.type === 'youtube') {
-        // STOP AUDIO
-        audio.pause();
-        audio.removeAttribute('src');
-        audio.load();
-
-        stopYTSeekPolling();
-
-        // STATE
-        state.currentYTId = item.id;
-        resetProgress();
-
-        nowPlayingTitle.textContent = item.title;
-        updateExpandedView();
-        showYTPlayer();
-
-        // UI highlight
-        document.querySelectorAll('#youtube-results .track-item').forEach(el => {
-            const v = state.ytResults[parseInt(el.dataset.ytIdx)];
-            const playing = v && v.id === item.id;
-            el.style.borderLeft = playing ? '5px solid var(--primary)' : '';
-            el.style.background = playing ? '#252525' : '#1a1a1a';
-        });
-
-        // LOAD PLAYER
-        if (state.ytReady && state.ytPlayer) {
-            loadYTVideo(item.id);
-        } else {
-            state.ytPendingVideoId = item.id;
-            ensureYTScript();
-        }
-
-        // MEDIA SESSION
-        if ('mediaSession' in navigator) {
-            navigator.mediaSession.setActionHandler('play', () => state.ytPlayer?.playVideo());
-            navigator.mediaSession.setActionHandler('pause', () => state.ytPlayer?.pauseVideo());
-            navigator.mediaSession.setActionHandler('previoustrack', () => document.getElementById('btn-prev').click());
-            navigator.mediaSession.setActionHandler('nexttrack', () => document.getElementById('btn-next').click());
-
-            navigator.mediaSession.metadata = new MediaMetadata({
-                title: item.title,
-                artist: item.uploader || 'YouTube',
-                artwork: [{ src: item.thumb || '', sizes: '512x512', type: 'image/jpeg' }],
-            });
-        }
-
-        updateUI();
-        return;
-    }
-
-    // ─── FILE LOCALE ───────────────────────────────────────────────────────────
-    state.currentYTId = null;
-    stopYTSeekPolling();
-
-    hideYTPlayer();
-    if (state.ytReady && state.ytPlayer) {
-        state.ytPlayer.stopVideo?.();
-    }
-
-    const idx = state.playlist.indexOf(item);
-    if (idx !== -1) playTrack(idx);
-}
-
-// ─── SEARCH ───────────────────────────────────────────────────────────────────
-let ytSearchDebounce = null;
+/* ── Ricerca con debounce ───────────────────────────────────────── */
+let _debounce = null;
 
 export function scheduleYTSearch(query, delayMs = 500) {
-    clearTimeout(ytSearchDebounce);
-    ytSearchDebounce = setTimeout(() => searchYouTube(query), delayMs);
+  clearTimeout(_debounce);
+  _debounce = setTimeout(() => _search(query), delayMs);
 }
 
-async function searchYouTube(q) {
-    const container = document.getElementById('youtube-results');
-    const section = document.getElementById('yt-section');
-
-    if (!q || q.length < 2) {
-        section.style.display = 'none';
-        container.innerHTML = '';
-        state.ytResults = [];
-        return;
-    }
-
-    section.style.display = 'block';
-
-    container.innerHTML = `
-        <div class="yt-skeleton">
-            ${[0,1,2].map(() => `
-            <div class="yt-skeleton-item">
-                <div class="skel-cover"></div>
-                <div class="skel-info">
-                    <div class="skel-line"></div>
-                    <div class="skel-line short"></div>
-                </div>
-            </div>`).join('')}
-        </div>`;
-
-    try {
-        const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&maxResults=3&key=${YT_API_KEY}`;
-        const searchRes = await fetch(searchUrl);
-        const searchData = await searchRes.json();
-
-        const items = searchData.items || [];
-        if (!items.length) {
-            container.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
-            return;
-        }
-
-        const ids = items.map(i => i.id.videoId).join(',');
-        const detailRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YT_API_KEY}`);
-        const detailData = await detailRes.json();
-
-        const durationMap = {};
-        (detailData.items || []).forEach(v => {
-            durationMap[v.id] = parseISO8601Duration(v.contentDetails.duration);
-        });
-
-        state.ytResults = items.map(item => ({
-            type: 'youtube',
-            id: item.id.videoId,
-            title: item.snippet.title,
-            thumb: item.snippet.thumbnails?.medium?.url || '',
-            duration: durationMap[item.id.videoId] || 0,
-            uploader: item.snippet.channelTitle || 'YouTube',
-        }));
-
-        renderYouTubeResults(state.ytResults);
-
-    } catch (err) {
-        console.error(err);
-        container.innerHTML = `<div style="color:red;padding:10px;">Errore</div>`;
-    }
+/* ── Avvia riproduzione e aggiorna highlight ────────────────────── */
+export function playYTItem(item) {
+  playYT(item);
+  _highlight(item.id);
 }
 
-// ─── RENDER ───────────────────────────────────────────────────────────────────
-import { createTrackItem } from './library.js';
+/* ═══════════════════════════════════════════════════════════════════
+   RICERCA
+   ═══════════════════════════════════════════════════════════════════ */
 
-function renderYouTubeResults(results) {
-    const container = document.getElementById('youtube-results');
-    container.innerHTML = '';
+async function _search(q) {
+  if (!q || q.length < 2) {
+    ytSection.hidden   = true;
+    ytResults.innerHTML = '';
+    store.ytResults    = [];
+    return;
+  }
 
-    results.forEach((video, i) => {
-        const el = createTrackItem(video, '', i, true);
-        container.appendChild(el);
-    });
+  ytSection.hidden    = false;
+  ytResults.innerHTML = _skeletonHTML();
+
+  try {
+    // 1. Search
+    const searchRes  = await fetch(
+      `https://www.googleapis.com/youtube/v3/search` +
+      `?part=snippet&type=video&maxResults=3` +
+      `&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`
+    );
+    const searchData = await searchRes.json();
+    const items      = searchData.items || [];
+
+    if (!items.length) {
+      ytResults.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
+      return;
+    }
+
+    // 2. Durate
+    const ids        = items.map(i => i.id.videoId).join(',');
+    const detailRes  = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos` +
+      `?part=contentDetails&id=${ids}&key=${YT_API_KEY}`
+    );
+    const detailData = await detailRes.json();
+
+    const durationMap = Object.fromEntries(
+      (detailData.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
+    );
+
+    store.ytResults = items.map(item => ({
+      type:     'youtube',
+      id:       item.id.videoId,
+      title:    item.snippet.title,
+      thumb:    item.snippet.thumbnails?.medium?.url || '',
+      duration: durationMap[item.id.videoId] || 0,
+      uploader: item.snippet.channelTitle || 'YouTube',
+    }));
+
+    _renderResults(store.ytResults);
+
+  } catch (err) {
+    console.error('[YT search]', err);
+    ytResults.innerHTML = `<div style="color:red;padding:10px;">Errore ricerca</div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RENDER
+   ═══════════════════════════════════════════════════════════════════ */
+
+function _renderResults(results) {
+  ytResults.innerHTML = '';
+  results.forEach((video, i) => {
+    ytResults.appendChild(makeTrackEl(video, '', i, true));
+  });
+}
+
+function _highlight(videoId) {
+  ytResults.querySelectorAll('.track-item').forEach(el => {
+    const idx   = parseInt(el.dataset.ytIdx);
+    const match = store.ytResults[idx]?.id === videoId;
+    el.style.borderLeft = match ? '5px solid var(--accent)' : '';
+    el.style.background = match ? '#252525' : '';
+  });
+}
+
+/* ── Skeleton loader ────────────────────────────────────────────── */
+function _skeletonHTML() {
+  const row = `
+    <div class="skeleton-item">
+      <div class="skel-box skel-cover"></div>
+      <div class="skel-info">
+        <div class="skel-box skel-line"></div>
+        <div class="skel-box skel-line skel-short"></div>
+      </div>
+    </div>`;
+  return `<div class="skeleton-list">${row.repeat(3)}</div>`;
 }
