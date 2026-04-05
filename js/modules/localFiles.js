@@ -62,8 +62,8 @@ export function makeTrackEl(item, path, idx, isYT = false) {
   el.dataset.idx = idx;
   if (isYT) el.dataset.ytIdx = idx;
 
-  const title    = isYT ? item.title    : item.name.replace(/\.[^/.]+$/, '');
-  const subtitle = isYT ? (item.uploader || 'YouTube') : (path.split('/').pop() || path);
+  const title    = isYT ? decodeHtml(item.title)  : item.name.replace(/\.[^/.]+$/, '');  
+  const subtitle = isYT ? decodeHtml(item.uploader || 'YouTube') : (path.split('/').pop() || path);
   const ext      = isYT ? 'YT'          : item.name.split('.').pop().toUpperCase();
   const durText  = isYT && item.duration
     ? `${Math.floor(item.duration / 60)}:${String(item.duration % 60).padStart(2,'0')}`
