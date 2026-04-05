@@ -32,7 +32,7 @@ export function startYTSeekPoll() {
         timeTotal.textContent   = formatTime(dur);
       }
     } catch (_) {}
-  }, 500);
+  }, 1000);
 }
 
 export function stopYTSeekPoll() {
