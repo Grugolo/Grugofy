@@ -229,7 +229,7 @@ function _ensureYTScript() {
 }
 
 function _fileTitle(file) {
-  return file.name.replace(/\.[^/.]+$/_, '');
+  return file.name.replace(/\.[^/.]+$_/, '');
 }
 
 function _mediaSessionLocal(track, title) {
