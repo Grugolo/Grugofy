@@ -37,8 +37,8 @@ export function dequeueNext() {
       if (idx !== -1) playLocal(idx);
     }
   });
-  return true;
    saveState();
+   return true;
 }
 
 export function removeFromQueue(i) {
