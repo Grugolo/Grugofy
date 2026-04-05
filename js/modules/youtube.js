@@ -43,7 +43,7 @@ async function _search(q) {
     // 1. Search
     const searchRes  = await fetch(
       `https://www.googleapis.com/youtube/v3/search` +
-      `?part=snippet&type=video&maxResults=3` +
+      `?part=snippet&type=video&maxResults=6` +
       `&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`
     );
     const searchData = await searchRes.json();
