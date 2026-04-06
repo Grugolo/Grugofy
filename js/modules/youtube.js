@@ -33,8 +33,7 @@ async function _search(q) {
   const reqId = ++_lastReqId;
   if (!q || q.length < 2) { 
     if (ytGroup && ytTracksEl) {
-      ytTracksEl.innerHTML = '';
-      ytTracksEl.hidden = true;
+      ytTracksEl.innerHTML = `  <div style="color:var(--text-dim);padding:10px;">    Cerca su YouTube  </div>`;
     }
     store.ytTracksEl    = [];
     return;
@@ -93,19 +92,32 @@ async function _search(q) {
    ═══════════════════════════════════════════════════════════════════ */
 
 function _ensureYTFolder() {
+  const library = document.getElementById('library');
+
+  // se esiste ma NON è più nel DOM → reset
+  if (ytGroup && !library.contains(ytGroup)) {
+    ytGroup = null;
+    ytTracksEl = null;
+  }
+
   if (ytGroup) return;
+
   ytGroup = document.createElement('div');
   ytGroup.className = 'folder-group';
+
   const header = document.createElement('div');
   header.className = 'folder-name';
   header.textContent = '🌐 YouTube';
+
   ytTracksEl = document.createElement('div');
   ytTracksEl.className = 'folder-tracks';
+
   header.addEventListener('click', () => {
     ytTracksEl.hidden = !ytTracksEl.hidden;
   });
+
   ytGroup.append(header, ytTracksEl);
-  document.getElementById('library').prepend(ytGroup);
+  library.prepend(ytGroup);
 }
 
 function _renderResults(results) {
