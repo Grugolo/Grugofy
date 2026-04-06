@@ -24,18 +24,27 @@ searchInput.addEventListener('input', e => {
 
   clearBtn.classList.toggle('active', val.length > 0);
 
-  // Filtra tracce in libreria
+  // ✅ RESET COMPLETO PRIMA DEL FILTRO
+  document.querySelectorAll('.folder-group').forEach(group => {
+    group.style.display = '';
+    group.querySelectorAll('.track-item').forEach(item => {
+      item.style.display = '';
+    });
+  });
+
+  // ✅ POI APPLICA FILTRO
   document.querySelectorAll('.folder-group').forEach(group => {
     let visible = false;
+
     group.querySelectorAll('.track-item').forEach(item => {
       const match = item.textContent.toLowerCase().includes(val);
       item.style.display = match ? 'flex' : 'none';
       if (match) visible = true;
     });
+
     group.style.display = visible ? '' : 'none';
   });
 
-  // Ricerca YouTube (con debounce interno)
   scheduleYTSearch(val);
 });
 
