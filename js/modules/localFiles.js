@@ -61,39 +61,49 @@ export function makeTrackEl(item, path, idx, isYT = false) {
   el.className   = 'track-item';
   el.dataset.idx = idx;
   if (isYT) el.dataset.ytIdx = idx;
+  const cover = document.createElement('div');
+  cover.className = 'track-cover';
+  cover.id = `cov-${idx}`;
 
-  const title    = isYT ? decodeHtml(item.title)  : item.name.replace(/\.[^/.]+$/, '');  
+  if (isYT) {
+    cover.innerHTML = item.thumb
+      ? `<img src="${item.thumb}" alt="">`
+      : '▶️';
+  }
+
+  const title    = isYT ? decodeHtml(item.title)  : item.name.replace(/\.[^/.]+$/, '');
   const subtitle = isYT ? decodeHtml(item.uploader || 'YouTube') : (path.split('/').pop() || path);
-  const ext      = isYT ? 'YT'          : item.name.split('.').pop().toUpperCase();
+  const ext      = isYT ? 'YT' : item.name.split('.').pop().toUpperCase();
   const durText  = isYT && item.duration
     ? `${Math.floor(item.duration / 60)}:${String(item.duration % 60).padStart(2,'0')}`
     : '';
 
-const info = document.createElement('div');
-info.className = 'track-info';
+  const info = document.createElement('div');
+  info.className = 'track-info';
 
-const nameEl = document.createElement('span');
-nameEl.className = 'track-name';
-nameEl.textContent = title;
+  const nameEl = document.createElement('span');
+  nameEl.className = 'track-name';
+  nameEl.textContent = title;
 
-const meta = document.createElement('div');
-meta.className = 'track-meta-row';
+  const meta = document.createElement('div');
+  meta.className = 'track-meta-row';
 
-const sub = document.createElement('span');
-sub.textContent = subtitle;
+  const sub = document.createElement('span');
+  sub.textContent = subtitle;
 
-const format = document.createElement('span');
-format.className = 'file-format' + (isYT ? ' yt' : '');
-format.textContent = ext;
+  const format = document.createElement('span');
+  format.className = 'file-format' + (isYT ? ' yt' : '');
+  format.textContent = ext;
 
-const dur = document.createElement('span');
-dur.id = `dur-${isYT ? 'yt' : ''}${idx}`;
-dur.style.color = 'var(--accent)';
-dur.style.fontWeight = '700';
-dur.textContent = durText;
+  const dur = document.createElement('span');
+  dur.id = `dur-${isYT ? 'yt' : ''}${idx}`;
+  dur.style.color = 'var(--accent)';
+  dur.style.fontWeight = '700';
+  dur.textContent = durText;
 
-meta.append(sub, format, dur);
-info.append(nameEl, meta);
+  meta.append(sub, format, dur);
+  info.append(nameEl, meta);
+  el.append(cover, info);
 
 el.appendChild(info);
 
