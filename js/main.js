@@ -24,20 +24,19 @@ searchInput.addEventListener('input', e => {
 
   clearBtn.classList.toggle('active', val.length > 0);
 
-  // ✅ RESET COMPLETO PRIMA DEL FILTRO
   document.querySelectorAll('.folder-group').forEach(group => {
-    group.style.display = '';
+    group.classList.toggle('hidden', !visible);
     group.querySelectorAll('.track-item').forEach(item => {
-      item.style.display = '';
+      item.classList.toggle('hidden', !match);
     });
   });
 
-  // ✅ POI APPLICA FILTRO
   document.querySelectorAll('.folder-group').forEach(group => {
     let visible = false;
 
     group.querySelectorAll('.track-item').forEach(item => {
-      const match = item.textContent.toLowerCase().includes(val);
+      const text = item.querySelector('.track-name')?.textContent || '';
+      const match = text.toLowerCase().includes(val);     
       item.style.display = match ? 'flex' : 'none';
       if (match) visible = true;
     });
