@@ -25,13 +25,6 @@ searchInput.addEventListener('input', e => {
   clearBtn.classList.toggle('active', val.length > 0);
 
   document.querySelectorAll('.folder-group').forEach(group => {
-    group.classList.toggle('hidden', !visible);
-    group.querySelectorAll('.track-item').forEach(item => {
-      item.classList.toggle('hidden', !match);
-    });
-  });
-
-  document.querySelectorAll('.folder-group').forEach(group => {
     let visible = false;
 
     group.querySelectorAll('.track-item').forEach(item => {
