@@ -24,12 +24,14 @@ searchInput.addEventListener('input', e => {
 
   clearBtn.classList.toggle('active', val.length > 0);
 
-  document.querySelectorAll('.folder-group').forEach(group => {
+  // FIX BUG 1: escludi il gruppo YT ([data-yt-group]) dal filtro locale —
+  // la sua visibilità è gestita interamente da youtube.js
+  document.querySelectorAll('.folder-group:not([data-yt-group])').forEach(group => {
     let visible = false;
 
     group.querySelectorAll('.track-item').forEach(item => {
       const text = item.querySelector('.track-name')?.textContent || '';
-      const match = text.toLowerCase().includes(val);     
+      const match = text.toLowerCase().includes(val);
       item.style.display = match ? 'flex' : 'none';
       if (match) visible = true;
     });
@@ -74,48 +76,42 @@ window._playLocal   = playLocal;
 window.togglePlayer = togglePlayer;
 
 /* ── Inizializzazione ───────────────────────────────────────────── */
-// type=module garantisce esecuzione dopo il parsing del DOM,
-// ma window.load assicura che tutte le risorse siano pronte.
 window.addEventListener('load', () => {
   updateUI();
   renderQueue();
   renderPlaylists();
   setupExpandedSwipe();
 
-
   const state = loadState();
 
-if (state) {
-  // ripristina coda
-  state.queue.forEach(item => {
-    if (item.yt) {
-      store.queue.push({
-        type: 'youtube',
-        id: item.id,
-        title: item.title,
-        thumb: `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`,
-      });
-    }
-  });
-
-  // ripristina YT
-  if (state.current?.ytId) {
-    playYT({
-      id: state.current.ytId,
-      title: state.current.title || 'YouTube'
+  if (state) {
+    // ripristina coda
+    state.queue.forEach(item => {
+      if (item.yt) {
+        store.queue.push({
+          type: 'youtube',
+          id: item.id,
+          title: item.title,
+          thumb: `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`,
+        });
+      }
     });
 
-    setTimeout(() => {
-      try {
-        store.ytPlayer.seekTo(state.current.time || 0);
-        if (state.current.paused) store.ytPlayer.pauseVideo();
-      } catch {}
-    }, 1000);
+    // ripristina YT
+    if (state.current?.ytId) {
+      playYT({
+        id: state.current.ytId,
+        title: state.current.title || 'YouTube'
+      });
+
+      setTimeout(() => {
+        try {
+          store.ytPlayer.seekTo(state.current.time || 0);
+          if (state.current.paused) store.ytPlayer.pauseVideo();
+        } catch {}
+      }, 1000);
+    }
+
+    renderQueue();
   }
-
-  renderQueue();
-}
-
-  
 });
-
