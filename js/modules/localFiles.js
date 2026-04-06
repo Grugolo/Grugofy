@@ -105,8 +105,6 @@ export function makeTrackEl(item, path, idx, isYT = false) {
   info.append(nameEl, meta);
   el.append(cover, info);
 
-el.appendChild(info);
-
   // Click su track-info → riproduci
   el.querySelector('.track-info').addEventListener('click', () => {
     if (isYT) {
