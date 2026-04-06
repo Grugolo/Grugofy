@@ -29,16 +29,19 @@ export function playYTItem(item) {
    ═══════════════════════════════════════════════════════════════════ */
 
 async function _search(q) {
-  if (!q || q.length < 2) {
-    ytSection.hidden   = true;
-    ytResults.innerHTML = '';
+  if (!q || q.length < 2 { 
+    if (ytGroup) {
+      ytTracksEl.innerHTML = '';
+      ytTracksEl.hidden = true;
+    }
     store.ytResults    = [];
     return;
   }
 
-  ytSection.hidden    = false;
-  ytResults.innerHTML = _skeletonHTML();
-
+  _ensureYTFolder();
+  ytTracksEl.hidden = false;
+  ytTracksEl.innerHTML = _skeletonHTML();
+  
   try {
     // 1. Search
     const searchRes  = await fetch(
@@ -79,18 +82,36 @@ async function _search(q) {
 
   } catch (err) {
     console.error('[YT search]', err);
-    ytResults.innerHTML = `<div style="color:red;padding:10px;">Errore ricerca</div>`;
-  }
+    ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    RENDER
    ═══════════════════════════════════════════════════════════════════ */
 
+let ytGroup = null;
+let ytTracksEl = null;
+
+function _ensureYTFolder() {
+  if (ytGroup) return;
+  ytGroup = document.createElement('div');
+  ytGroup.className = 'folder-group';
+  const header = document.createElement('div');
+  header.className = 'folder-name';
+  header.textContent = '🌐 YouTube';
+  ytTracksEl = document.createElement('div');
+  ytTracksEl.className = 'folder-tracks';
+  header.addEventListener('click', () => {
+    ytTracksEl.hidden = !ytTracksEl.hidden;
+  });
+  ytGroup.append(header, ytTracksEl);
+  document.getElementById('library').prepend(ytGroup);
+}
+
 function _renderResults(results) {
-  ytResults.innerHTML = '';
+  ytTracksEl.innerHTML = '';
   results.forEach((video, i) => {
-    ytResults.appendChild(makeTrackEl(video, '', i, true));
+    ytTracksEl.appendChild(makeTrackEl(video, '', i, true));
   });
 }
 
