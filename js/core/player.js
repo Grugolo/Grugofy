@@ -16,6 +16,23 @@ const titleEl     = document.getElementById('nowPlayingTitle');
 
 let _currentObjectURL = null;
 
+/* ── Audio silenzioso: ancora MediaSession per Android/Brave ────────
+   Android mostra prev/next solo se un <audio> nativo sta suonando.
+   Usiamo un file WAV inline (44 byte, silenzio) in loop continuo
+   mentre YT è attivo, così il browser "vede" un media element vivo.  */
+const _SILENT_WAV = 'data:audio/wav;base64,'
+  + 'UklGRiQAAABXQVZFZm10IBAAAA'
+  + 'EAAQAAgD4AAAB9AAACABAA'
+  + 'ZGF0YQAAAAA=';
+
+const _silentEl = new Audio();
+_silentEl.src    = _SILENT_WAV;
+_silentEl.loop   = true;
+_silentEl.volume = 0;
+
+function _silentPlay()  { _silentEl.play().catch(() => {}); }
+function _silentStop()  { _silentEl.pause(); _silentEl.currentTime = 0; }
+
 /* ═══════════════════════════════════════════════════════════════════
    LOCALE
    ═══════════════════════════════════════════════════════════════════ */
@@ -36,8 +53,9 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
   store.currentIdx    = idx;
   store.lastManualIdx = idx;
 
-  // Ferma YT
+  // Ferma YT e silent anchor
   _ytStop();
+  _silentStop();
   emit(EV.YT_STOPPED);
   _ytWrapperVisible(false);
 
@@ -98,6 +116,8 @@ export function playYT(item) {
   emit(EV.VISUAL_UPDATE);
   // FIX BUG 2: chiama DOPO mediaEl.load() così i handler sono sempre registrati
   _mediaSessionYT(item);
+  // Avvia il silent anchor subito; verrà ripetuto anche su onStateChange
+  _silentPlay();
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -200,14 +220,14 @@ window.onYouTubeIframeAPIReady = () => {
       onStateChange: (e) => {
         if (e.data === YT.PlayerState.PLAYING) {
           emit(EV.YT_PLAYING);
-          // FIX BUG 2: aggiorna playbackState per mantenere i controlli di sistema attivi
+          _silentPlay(); // mantieni l'anchor attivo su Android
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'playing';
           }
         }
         if (e.data === YT.PlayerState.PAUSED) {
           emit(EV.YT_STOPPED);
-          // FIX BUG 2: aggiorna playbackState
+          _silentStop();
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'paused';
           }
