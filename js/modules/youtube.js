@@ -7,8 +7,8 @@ import { playYT }                            from '../core/player.js';
 import { makeTrackEl }                       from './localFiles.js';
 import { parseISO8601, escHtml, decodeHtml } from '../utils.js';
   
-const ytSection = document.getElementById('ytSection');
-const ytResults = document.getElementById('ytResults');
+let ytGroup = null;
+let ytTracksEl = null;
 
 /* ── Ricerca con debounce ───────────────────────────────────────── */
 let _debounce = null;
@@ -29,7 +29,7 @@ export function playYTItem(item) {
    ═══════════════════════════════════════════════════════════════════ */
 
 async function _search(q) {
-  if (!q || q.length < 2 { 
+  if (!q || q.length < 2) { 
     if (ytGroup) {
       ytTracksEl.innerHTML = '';
       ytTracksEl.hidden = true;
@@ -88,9 +88,6 @@ async function _search(q) {
 /* ═══════════════════════════════════════════════════════════════════
    RENDER
    ═══════════════════════════════════════════════════════════════════ */
-
-let ytGroup = null;
-let ytTracksEl = null;
 
 function _ensureYTFolder() {
   if (ytGroup) return;
