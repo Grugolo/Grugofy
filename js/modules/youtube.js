@@ -31,15 +31,19 @@ export function playYTItem(item) {
 
 async function _search(q) {
   const reqId = ++_lastReqId;
-  if (!q || q.length < 2) { 
-    if (ytGroup && ytTracksEl) {
-      ytTracksEl.innerHTML = `  <div style="color:var(--text-dim);padding:10px;">    Cerca su YouTube  </div>`;
+  if (!q || q.length < 2) {
+    // FIX BUG 1: ripristina visibilità del gruppo YT quando la query è vuota
+    if (ytGroup) ytGroup.style.display = 'none';
+    if (ytTracksEl) {
+      ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Cerca su YouTube</div>`;
     }
-    store.ytTracksEl    = [];
+    store.ytResults = [];
     return;
   }
 
   _ensureYTFolder();
+  // Assicura che il gruppo sia visibile quando si cerca
+  ytGroup.style.display = '';
   ytTracksEl.innerHTML = _skeletonHTML();
   ytTracksEl.hidden = false;
   
@@ -70,7 +74,7 @@ async function _search(q) {
       (detailData.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
     );
 
-    store.ytTracksEl = items.map(item => ({
+    store.ytResults = items.map(item => ({
       type:     'youtube',
       id:       item.id.videoId,
       title:    decodeHtml(item.snippet.title),
@@ -79,12 +83,13 @@ async function _search(q) {
       uploader: decodeHtml(item.snippet.channelTitle || 'YouTube'),
     }));
     
-   if (reqId !== _lastReqId) return;
-    _renderResults(store.ytTracksEl);
+    if (reqId !== _lastReqId) return;
+    _renderResults(store.ytResults);
 
   } catch (err) {
     console.error('[YT search]', err);
-    ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;  }
+    ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -104,6 +109,10 @@ function _ensureYTFolder() {
 
   ytGroup = document.createElement('div');
   ytGroup.className = 'folder-group';
+  // FIX BUG 1: marca il gruppo YT così il filtro locale lo ignora
+  ytGroup.dataset.ytGroup = '1';
+  // Nascosto di default finché non c'è una query attiva
+  ytGroup.style.display = 'none';
 
   const header = document.createElement('div');
   header.className = 'folder-name';
@@ -128,9 +137,10 @@ function _renderResults(results) {
 }
 
 function _highlight(videoId) {
+  if (!ytTracksEl) return;
   ytTracksEl.querySelectorAll('.track-item').forEach(el => {
     const idx   = parseInt(el.dataset.ytIdx);
-    const match = store.ytTracksEl[idx]?.id === videoId;
+    const match = store.ytResults[idx]?.id === videoId;
     el.style.borderLeft = match ? '5px solid var(--accent)' : '';
     el.style.background = match ? '#252525' : '';
   });
