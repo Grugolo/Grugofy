@@ -324,3 +324,11 @@ header {
 
 /* ── SVG icons (inline) ────────────────────────────────────────── */
 .ctrl-btn svg { pointer-events: none; }
+
+
+
+
+
+.hidden {
+  display: none !important;
+}
