@@ -1,160 +1,278 @@
-// ── youtube.js ───────────────────────────────────────────────────
-// Ricerca YouTube e avvio riproduzione YT.
+// ── player.js ────────────────────────────────────────────────────
+// Motore di riproduzione unificato (locale + YouTube).
+// NON importa nulla dalla UI — comunica tramite event bus.
 
-import { YT_API_KEY }                        from '../config.js';
-import { store }                             from '../core/store.js';
-import { playYT }                            from '../core/player.js';
-import { makeTrackEl }                       from './localFiles.js';
-import { parseISO8601, escHtml, decodeHtml } from '../utils.js';
-  
-let ytGroup = null;
-let ytTracksEl = null;
-let _lastReqId = 0;
+import { store }       from './store.js';
+import { formatTime }  from '../utils.js';
+import { emit, EV }    from './events.js';
+import { saveState }   from './persist.js';
 
-/* ── Ricerca con debounce ───────────────────────────────────────── */
-let _debounce = null;
+export const mediaEl = document.getElementById('mediaEl');
 
-export function scheduleYTSearch(query, delayMs = 600) {
-  clearTimeout(_debounce);
-  _debounce = setTimeout(() => _search(query), delayMs);
-}
+const seekSlider  = document.getElementById('seekSlider');
+const timeCurrent = document.getElementById('timeCurrent');
+const timeTotal   = document.getElementById('timeTotal');
+const titleEl     = document.getElementById('nowPlayingTitle');
 
-/* ── Avvia riproduzione e aggiorna highlight ────────────────────── */
-export function playYTItem(item) {
-  playYT(item);
-  _highlight(item.id);
+let _currentObjectURL = null;
+
+/* ═══════════════════════════════════════════════════════════════════
+   LOCALE
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Riproduce la traccia locale all'indice `idx`.
+ * @param {number} idx
+ * @param {{ addHistory?: boolean, fromBack?: boolean }} opts
+ */
+export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
+  if (idx < 0 || idx >= store.playlist.length) return;
+
+  if (addHistory && !fromBack && store.currentIdx !== -1 && store.currentIdx !== idx) {
+    store.playHistory.push(store.currentIdx);
+  }
+
+  store.currentYTId   = null;
+  store.currentIdx    = idx;
+  store.lastManualIdx = idx;
+
+  // Ferma YT
+  _ytStop();
+  emit(EV.YT_STOPPED);
+  _ytWrapperVisible(false);
+
+  const track = store.playlist[idx];
+
+  if (_currentObjectURL) URL.revokeObjectURL(_currentObjectURL);
+  _currentObjectURL = URL.createObjectURL(track.file);
+  mediaEl.src = _currentObjectURL;
+  mediaEl.play();
+
+  titleEl.textContent         = _fileTitle(track.file);
+  seekSlider.value            = 0;
+  timeCurrent.textContent     = '0:00';
+  timeTotal.textContent       = '0:00';
+
+  emit(EV.PLAYER_CHANGE);
+  saveState();
+  emit(EV.VISUAL_UPDATE);
+  _mediaSessionLocal(track, titleEl.textContent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   RICERCA
+   YOUTUBE
    ═══════════════════════════════════════════════════════════════════ */
 
-async function _search(q) {
-  const reqId = ++_lastReqId;
-  if (!q || q.length < 2) {
-    // FIX BUG 1: ripristina visibilità del gruppo YT quando la query è vuota
-    if (ytGroup) ytGroup.style.display = 'none';
-    if (ytTracksEl) {
-      ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Cerca su YouTube</div>`;
+/**
+ * Riproduce un item YouTube.
+ * @param {{ id: string, title: string, thumb?: string, uploader?: string }} item
+ */
+export function playYT(item) {
+  // Ferma locale e libera URL
+  mediaEl.pause();
+  if (_currentObjectURL) {
+    URL.revokeObjectURL(_currentObjectURL);
+    _currentObjectURL = null;
+  }
+  mediaEl.removeAttribute('src');
+  // FIX BUG 2: load() può resettare i MediaSession handlers su alcuni browser;
+  // rebindiamo DOPO il load tramite _mediaSessionYT chiamato più in basso
+  mediaEl.load();
+
+  emit(EV.YT_STOPPED); // ferma poll seekbar
+
+  store.currentYTId = item.id;
+  titleEl.textContent = item.title;
+
+  _ytWrapperVisible(true);
+
+  if (store.ytReady && store.ytPlayer) {
+    store.ytPlayer.loadVideoById(item.id);
+  } else {
+    store.ytPending = item.id;
+    _ensureYTScript();
+  }
+
+  emit(EV.PLAYER_CHANGE);
+  saveState();
+  emit(EV.VISUAL_UPDATE);
+  // FIX BUG 2: chiama DOPO mediaEl.load() così i handler sono sempre registrati
+  _mediaSessionYT(item);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONTROLLI
+   ═══════════════════════════════════════════════════════════════════ */
+
+export function togglePlay() {
+  if (store.currentYTId) {
+    if (!store.ytReady || !store.ytPlayer) return;
+    try {
+      store.ytPlayer.getPlayerState() === YT.PlayerState.PLAYING
+        ? store.ytPlayer.pauseVideo()
+        : store.ytPlayer.playVideo();
+    } catch (_) {}
+  } else {
+    mediaEl.paused ? mediaEl.play() : mediaEl.pause();
+  }
+}
+
+export function seek(pct) {
+  if (store.currentYTId && store.ytReady && store.ytPlayer) {
+    store.ytPlayer.seekTo((pct / 100) * (store.ytPlayer.getDuration() || 0), true);
+  } else if (mediaEl.duration) {
+    mediaEl.currentTime = (pct / 100) * mediaEl.duration;
+  }
+}
+
+export function playNext() {
+  import('./queue.js').then(({ dequeueNext }) => {
+    if (dequeueNext()) return;
+    if (store.currentYTId) return;
+
+    let next = store.currentIdx + 1;
+    if (store.shuffle && store.shuffleOrder.length) {
+      const curPos = store.shuffleOrder.indexOf(store.currentIdx);
+      const nxtPos = (curPos + 1) % store.shuffleOrder.length;
+      next = store.shuffleOrder[nxtPos];
     }
-    store.ytResults = [];
+    if (next < store.playlist.length) playLocal(next);
+  });
+}
+
+export function playPrev() {
+  if (!store.currentYTId && mediaEl.currentTime > 3) {
+    mediaEl.currentTime = 0;
     return;
   }
-
-  _ensureYTFolder();
-  // Assicura che il gruppo sia visibile quando si cerca
-  ytGroup.style.display = '';
-  ytTracksEl.innerHTML = _skeletonHTML();
-  ytTracksEl.hidden = false;
-  
-  try {
-    // 1. Search
-    const searchRes  = await fetch(
-      `https://www.googleapis.com/youtube/v3/search` +
-      `?part=snippet&type=video&maxResults=6` +
-      `&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`
-    );
-    const searchData = await searchRes.json();
-    const items      = searchData.items || [];
-
-    if (!items.length) {
-      ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
-      return;
-    }
-
-    // 2. Durate
-    const ids        = items.map(i => i.id.videoId).join(',');
-    const detailRes  = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos` +
-      `?part=contentDetails&id=${ids}&key=${YT_API_KEY}`
-    );
-    const detailData = await detailRes.json();
-
-    const durationMap = Object.fromEntries(
-      (detailData.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
-    );
-
-    store.ytResults = items.map(item => ({
-      type:     'youtube',
-      id:       item.id.videoId,
-      title:    decodeHtml(item.snippet.title),
-      thumb:    item.snippet.thumbnails?.medium?.url || '',
-      duration: durationMap[item.id.videoId] || 0,
-      uploader: decodeHtml(item.snippet.channelTitle || 'YouTube'),
-    }));
-    
-    if (reqId !== _lastReqId) return;
-    _renderResults(store.ytResults);
-
-  } catch (err) {
-    console.error('[YT search]', err);
-    ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
+  if (store.playHistory.length) {
+    playLocal(store.playHistory.pop(), { addHistory: false, fromBack: true });
+    return;
+  }
+  if (!store.currentYTId && store.currentIdx > 0) {
+    playLocal(store.currentIdx - 1);
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   RENDER
+   EVENTI MEDIA ELEMENT
    ═══════════════════════════════════════════════════════════════════ */
 
-function _ensureYTFolder() {
-  const library = document.getElementById('library');
-
-  // se esiste ma NON è più nel DOM → reset
-  if (ytGroup && !library.contains(ytGroup)) {
-    ytGroup = null;
-    ytTracksEl = null;
+let _saveTimer = null;
+mediaEl.ontimeupdate = () => {
+  if (!mediaEl.duration) return;
+  seekSlider.value        = (mediaEl.currentTime / mediaEl.duration) * 100;
+  timeCurrent.textContent = formatTime(mediaEl.currentTime);
+  timeTotal.textContent   = formatTime(mediaEl.duration);
+  if (!_saveTimer) {
+    _saveTimer = setTimeout(() => {
+      saveState();
+      _saveTimer = null;
+    }, 1000);
   }
+};
 
-  if (ytGroup) return;
+mediaEl.onplay  = () => emit(EV.PLAYER_CHANGE);
+mediaEl.onpause = () => emit(EV.PLAYER_CHANGE);
+mediaEl.onended = () => {
+  if (store.looping) { mediaEl.currentTime = 0; mediaEl.play(); }
+  else playNext();
+};
 
-  ytGroup = document.createElement('div');
-  ytGroup.className = 'folder-group';
-  // FIX BUG 1: marca il gruppo YT così il filtro locale lo ignora
-  ytGroup.dataset.ytGroup = '1';
-  // Nascosto di default finché non c'è una query attiva
-  ytGroup.style.display = 'none';
+/* ═══════════════════════════════════════════════════════════════════
+   YT IFrame API (callback globale richiesta dall'API)
+   ═══════════════════════════════════════════════════════════════════ */
 
-  const header = document.createElement('div');
-  header.className = 'folder-name';
-  header.textContent = '🌐 YouTube';
-
-  ytTracksEl = document.createElement('div');
-  ytTracksEl.className = 'folder-tracks';
-
-  header.addEventListener('click', () => {
-    ytTracksEl.hidden = !ytTracksEl.hidden;
+window.onYouTubeIframeAPIReady = () => {
+  store.ytPlayer = new YT.Player('ytPlayerEl', {
+    height: '100%',
+    width:  '100%',
+    videoId: '',
+    playerVars: { playsinline: 1, autoplay: 1 },
+    events: {
+      onReady: () => {
+        store.ytReady = true;
+        if (store.ytPending) {
+          store.ytPlayer.loadVideoById(store.ytPending);
+          store.ytPending = null;
+        }
+      },
+      onStateChange: (e) => {
+        if (e.data === YT.PlayerState.PLAYING) {
+          emit(EV.YT_PLAYING);
+          // FIX BUG 2: aggiorna playbackState per mantenere i controlli di sistema attivi
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+          }
+        }
+        if (e.data === YT.PlayerState.PAUSED) {
+          emit(EV.YT_STOPPED);
+          // FIX BUG 2: aggiorna playbackState
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'paused';
+          }
+        }
+        if (e.data === YT.PlayerState.ENDED)   playNext();
+        emit(EV.PLAYER_CHANGE);
+      },
+    },
   });
+};
 
-  ytGroup.append(header, ytTracksEl);
-  library.prepend(ytGroup);
+/* ═══════════════════════════════════════════════════════════════════
+   HELPERS PRIVATI
+   ═══════════════════════════════════════════════════════════════════ */
+
+function _ytStop() {
+  if (store.ytReady && store.ytPlayer) {
+    try { store.ytPlayer.stopVideo(); } catch (_) {}
+  }
 }
 
-function _renderResults(results) {
-  ytTracksEl.innerHTML = '';
-  results.forEach((video, i) => {
-    ytTracksEl.appendChild(makeTrackEl(video, '', i, true));
-  });
+function _ytWrapperVisible(show) {
+  document.getElementById('ytWrapper').classList.toggle('active', show);
 }
 
-function _highlight(videoId) {
-  if (!ytTracksEl) return;
-  ytTracksEl.querySelectorAll('.track-item').forEach(el => {
-    const idx   = parseInt(el.dataset.ytIdx);
-    const match = store.ytResults[idx]?.id === videoId;
-    el.style.borderLeft = match ? '5px solid var(--accent)' : '';
-    el.style.background = match ? '#252525' : '';
-  });
+function _ensureYTScript() {
+  if (window.YT || document.getElementById('yt-iframe-api')) return;
+  const s  = document.createElement('script');
+  s.id  = 'yt-iframe-api';
+  s.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(s);
 }
 
-/* ── Skeleton loader ────────────────────────────────────────────── */
-function _skeletonHTML() {
-  const row = `
-    <div class="skeleton-item">
-      <div class="skel-box skel-cover"></div>
-      <div class="skel-info">
-        <div class="skel-box skel-line"></div>
-        <div class="skel-box skel-line skel-short"></div>
-      </div>
-    </div>`;
-  return `<div class="skeleton-list">${row.repeat(3)}</div>`;
+function _fileTitle(file) {
+  return file.name.replace(/\.[^/.]+$/, '');
+}
+
+function _mediaSessionLocal(track, title) {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title,
+    artist:  track.folder.split('/').pop(),
+    artwork: [{ src: track.cover || 'https://placehold.co/512x512', sizes: '512x512', type: 'image/png' }],
+  });
+  navigator.mediaSession.playbackState = 'playing';
+  _bindMediaSession();
+}
+
+function _mediaSessionYT(item) {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title:   item.title,
+    artist:  item.uploader || 'YouTube',
+    artwork: [{ src: item.thumb || '', sizes: '512x512', type: 'image/jpeg' }],
+  });
+  // FIX BUG 2: imposta playbackState esplicitamente — alcuni browser (Safari/iOS)
+  // resettano i controlli di sistema se lo stato non è dichiarato
+  navigator.mediaSession.playbackState = 'playing';
+  _bindMediaSession();
+}
+
+function _bindMediaSession() {
+  const ms = navigator.mediaSession;
+  ms.setActionHandler('play',          () => togglePlay());
+  ms.setActionHandler('pause',         () => togglePlay());
+  ms.setActionHandler('previoustrack', () => playPrev());
+  ms.setActionHandler('nexttrack',     () => playNext());
 }
