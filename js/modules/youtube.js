@@ -9,6 +9,7 @@ import { parseISO8601, escHtml, decodeHtml } from '../utils.js';
   
 let ytGroup = null;
 let ytTracksEl = null;
+let _lastReqId = 0;
 
 /* ── Ricerca con debounce ───────────────────────────────────────── */
 let _debounce = null;
@@ -29,18 +30,19 @@ export function playYTItem(item) {
    ═══════════════════════════════════════════════════════════════════ */
 
 async function _search(q) {
+  const reqId = ++_lastReqId;
   if (!q || q.length < 2) { 
-    if (ytGroup) {
+    if (ytGroup && ytTracksEl) {
       ytTracksEl.innerHTML = '';
       ytTracksEl.hidden = true;
     }
-    store.ytResults    = [];
+    store.ytTracksEl    = [];
     return;
   }
 
   _ensureYTFolder();
-  ytTracksEl.hidden = false;
   ytTracksEl.innerHTML = _skeletonHTML();
+  ytTracksEl.hidden = false;
   
   try {
     // 1. Search
@@ -53,7 +55,7 @@ async function _search(q) {
     const items      = searchData.items || [];
 
     if (!items.length) {
-      ytResults.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
+      ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
       return;
     }
 
@@ -69,7 +71,7 @@ async function _search(q) {
       (detailData.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
     );
 
-    store.ytResults = items.map(item => ({
+    store.ytTracksEl = items.map(item => ({
       type:     'youtube',
       id:       item.id.videoId,
       title:    decodeHtml(item.snippet.title),
@@ -77,8 +79,9 @@ async function _search(q) {
       duration: durationMap[item.id.videoId] || 0,
       uploader: decodeHtml(item.snippet.channelTitle || 'YouTube'),
     }));
-
-    _renderResults(store.ytResults);
+    
+   if (reqId !== _lastReqId) return;
+    _renderResults(store.ytTracksEl);
 
   } catch (err) {
     console.error('[YT search]', err);
@@ -113,9 +116,9 @@ function _renderResults(results) {
 }
 
 function _highlight(videoId) {
-  ytResults.querySelectorAll('.track-item').forEach(el => {
+  ytTracksEl.querySelectorAll('.track-item').forEach(el => {
     const idx   = parseInt(el.dataset.ytIdx);
-    const match = store.ytResults[idx]?.id === videoId;
+    const match = store.ytTracksEl[idx]?.id === videoId;
     el.style.borderLeft = match ? '5px solid var(--accent)' : '';
     el.style.background = match ? '#252525' : '';
   });
