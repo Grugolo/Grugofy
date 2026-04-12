@@ -1,14 +1,11 @@
 // ── controls.js ──────────────────────────────────────────────────
 // Player bar UI: icone SVG, event listener pulsanti, updateUI.
-// Ascolta eventi dal bus invece di importare direttamente player.js
-// (evita il ciclo: player → controls → player).
 
-import { store }                              from '../core/store.js';
-import { on, EV }                             from '../core/events.js';
-import { mediaEl, togglePlay, playNext, playPrev, seek } from '../core/player.js';
+import { store }                                                    from '../core/store.js';
+import { on, EV }                                                   from '../core/events.js';
+import { mediaEl, togglePlay, playNext, playPrev, seek }            from '../core/player.js';
 
 /* ── SVG Icons ──────────────────────────────────────────────────── */
-// Tutti inline per evitare richieste HTTP extra e semplificare il deploy.
 const ICONS = {
   play:  `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="#000" d="M8 5v14l11-7z"/></svg>`,
   pause: `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="#000" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`,
@@ -53,11 +50,15 @@ btnShuffle.onclick = () => {
 };
 
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
-on(EV.PLAYER_CHANGE, () => updateUI());
+// FIX: riceve { playing } esplicito da onStateChange YT per evitare
+// race condition con getPlayerState() su Brave/Android.
+on(EV.PLAYER_CHANGE, (detail) => updateUI(detail?.playing));
 
 /* ── updateUI ───────────────────────────────────────────────────── */
-export function updateUI() {
-  const playing = _isPlaying();
+// playingOverride: se definito (solo per YT), usa quel valore invece
+// di interrogare getPlayerState() che potrebbe essere in race.
+export function updateUI(playingOverride) {
+  const playing = (playingOverride !== undefined) ? playingOverride : _isPlaying();
 
   btnPlay.innerHTML    = playing ? ICONS.pause : ICONS.play;
   btnNext.innerHTML    = ICONS.next;
