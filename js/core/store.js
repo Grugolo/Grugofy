@@ -6,7 +6,7 @@ export const store = {
   playlist:       [],   // Array<{ file: File, folder: string, cover: string|null }>
   currentIdx:     -1,
   lastManualIdx:  -1,
-  playHistory:    [],   // Array<number> — indici delle tracce precedenti
+  playHistory:    [],   // Array<number|{yt:true,id,title,thumb}> — tracce precedenti
   sessionStart:   null, // Date — usata per il nome della playlist cronologia
 
   // Coda
@@ -22,5 +22,6 @@ export const store = {
   ytReady:     false,
   ytPending:   null,    // videoId da caricare quando ytPlayer è pronto
   currentYTId: null,
+  currentYTItem: null,  // FIX: oggetto YT corrente (per cronologia e shuffle)
   ytResults:   [],
 };
