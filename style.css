@@ -277,7 +277,7 @@ header {
   top: 0;
   left: 0;
   right: 0;
-  bottom: var(--player-h);   /* lascia spazio alla playerBar */
+  bottom: var(--player-(2*h));   /* lascia spazio alla playerBar */
   pointer-events: none;
   opacity: 0;
   transition: opacity .2s ease;
