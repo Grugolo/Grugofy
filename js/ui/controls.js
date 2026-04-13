@@ -49,10 +49,23 @@ btnShuffle.onclick = () => {
   updateUI();
 };
 
+/* ── Poll icona play/pausa per YT ───────────────────────────────
+   onStateChange non è affidabile su Brave/Android (a volte non
+   si triggera su PAUSED). Polliamo lo stato ogni 500ms quando
+   YT è attivo e aggiorniamo solo l'icona se è cambiata.        */
+let _lastPlayState = null;
+setInterval(() => {
+  if (!store.currentYTId || !store.ytReady || !store.ytPlayer) return;
+  let nowPlaying = false;
+  try { nowPlaying = store.ytPlayer.getPlayerState() === YT.PlayerState.PLAYING; } catch { return; }
+  if (nowPlaying !== _lastPlayState) {
+    _lastPlayState = nowPlaying;
+    btnPlay.innerHTML = nowPlaying ? ICONS.pause : ICONS.play;
+  }
+}, 500);
+
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
-// FIX: riceve { playing } esplicito da onStateChange YT per evitare
-// race condition con getPlayerState() su Brave/Android.
-on(EV.PLAYER_CHANGE, (detail) => updateUI(detail && ("playing" in detail) ? detail.playing : undefined));
+on(EV.PLAYER_CHANGE, () => updateUI());
 
 /* ── updateUI ───────────────────────────────────────────────────── */
 // playingOverride: se definito (solo per YT), usa quel valore invece
