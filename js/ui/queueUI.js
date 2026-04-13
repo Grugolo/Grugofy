@@ -1,6 +1,5 @@
 // ── queueUI.js ───────────────────────────────────────────────────
 // Rendering DOM di coda e playlist salvate.
-// Logica pura in core/queue.js; questo modulo gestisce solo il DOM.
 
 import { store }       from '../core/store.js';
 import { escHtml, showToast } from '../utils.js';
@@ -45,7 +44,7 @@ export function renderQueue() {
   });
 }
 
-/* ── Drag & drop touch — listener delegati, registrati una sola volta */
+/* ── Drag & drop touch ──────────────────────────────────────────── */
 let _dragIdx = null;
 
 queueListEl.addEventListener('touchstart', e => {
@@ -80,12 +79,13 @@ document.getElementById('saveQueueBtn').onclick = () => {
 };
 
 document.getElementById('saveHistoryBtn').onclick = () => {
-  if (!store.playHistory.length || !store.sessionStart) return showToast('Vuota!');
-  const start = store.sessionStart;
+  // FIX: rimosso il guard su playHistory.length — saveHistoryAsPlaylist
+  // include anche il brano corrente, quindi funziona anche con un solo brano.
+  const start = store.sessionStart || new Date();
   const now   = new Date();
   const _fmt  = d => `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
   const date  = `${start.getDate()}/${start.getMonth()+1}/${String(start.getFullYear()).slice(-2)}`;
-  const name  = prompt(`Nome playlist: ${date} ${_fmt(start)} - ${_fmt(now)}`);
+  const name  = prompt('Nome playlist:', `${date} ${_fmt(start)} - ${_fmt(now)}`);
   if (name) saveHistoryAsPlaylist(name);
 };
 

@@ -52,7 +52,7 @@ btnShuffle.onclick = () => {
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
 // FIX: riceve { playing } esplicito da onStateChange YT per evitare
 // race condition con getPlayerState() su Brave/Android.
-on(EV.PLAYER_CHANGE, (detail) => updateUI(detail?.playing));
+on(EV.PLAYER_CHANGE, (detail) => updateUI(detail && ("playing" in detail) ? detail.playing : undefined));
 
 /* ── updateUI ───────────────────────────────────────────────────── */
 // playingOverride: se definito (solo per YT), usa quel valore invece
