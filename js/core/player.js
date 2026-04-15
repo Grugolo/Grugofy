@@ -30,9 +30,10 @@ _silentEl.src    = _SILENT_WAV;
 _silentEl.loop   = true;
 _silentEl.volume = 0;
 
-// Avvia il silent anchor e ri-registra SEMPRE i MediaSession handler.
-// Brave annulla i handler ogni volta che lo stato audio cambia,
-// quindi ri-registriamo su ogni evento rilevante.
+// Ogni volta che il silent anchor parte, ri-registra i handler.
+// Brave li annulla a ogni cambio di stato audio.
+_silentEl.onplay = () => _bindMediaSession();
+
 function _silentActivate() {
   if (_silentEl.paused) {
     _silentEl.play().catch(() => {});
@@ -46,12 +47,14 @@ function _silentDeactivate() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SEEKBAR POLL per YouTube (250ms, molto piu reattivo)
+   SEEKBAR POLL per YouTube (250ms)
    ═══════════════════════════════════════════════════════════════════ */
 let _ytPollTimer = null;
+let _pollTick    = 0;
 
 export function startYTSeekPoll() {
   stopYTSeekPoll();
+  _pollTick = 0;
   _ytPollTimer = setInterval(() => {
     if (!store.ytPlayer || !store.currentYTId) { stopYTSeekPoll(); return; }
     try {
@@ -61,7 +64,7 @@ export function startYTSeekPoll() {
         seekSlider.value        = (cur / dur) * 100;
         timeCurrent.textContent = formatTime(cur);
         timeTotal.textContent   = formatTime(dur);
-        // Aggiorna la barra di avanzamento nella notifica di sistema (Brave/Android)
+
         if ('mediaSession' in navigator) {
           try {
             navigator.mediaSession.setPositionState({
@@ -73,6 +76,10 @@ export function startYTSeekPoll() {
         }
       }
     } catch (_) {}
+
+    // Ri-registra i handler ogni ~5s (Brave li azzera spesso)
+    if (++_pollTick % 20 === 0) _bindMediaSession();
+
   }, 250);
 }
 
@@ -87,7 +94,6 @@ export function stopYTSeekPoll() {
 export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
   if (idx < 0 || idx >= store.playlist.length) return;
 
-  // Salva in cronologia il brano corrente PRIMA di cambiare
   if (addHistory && !fromBack) {
     if (store.currentYTId && store.currentYTItem) {
       store.playHistory.push({ yt: true, ...store.currentYTItem });
@@ -111,7 +117,13 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
   if (_currentObjectURL) URL.revokeObjectURL(_currentObjectURL);
   _currentObjectURL = URL.createObjectURL(track.file);
   mediaEl.src = _currentObjectURL;
-  mediaEl.play();
+
+  mediaEl.play().then(() => {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = 'playing';
+    }
+    _bindMediaSession();
+  }).catch(() => {});
 
   titleEl.textContent     = _fileTitle(track.file);
   seekSlider.value        = 0;
@@ -129,23 +141,18 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
    ═══════════════════════════════════════════════════════════════════ */
 
 export function playYT(item) {
-  // Salva in cronologia il brano corrente PRIMA di cambiare
-  // (solo se stiamo gia riproducendo qualcosa di diverso)
   if (store.currentYTId && store.currentYTItem && store.currentYTId !== item.id) {
     store.playHistory.push({ yt: true, ...store.currentYTItem });
   } else if (!store.currentYTId && store.currentIdx !== -1) {
     store.playHistory.push(store.currentIdx);
   }
-  // Caso primo avvio (currentYTId=null, currentIdx=-1): non pushare nulla
 
-  // Ferma locale
   mediaEl.pause();
   if (_currentObjectURL) {
     URL.revokeObjectURL(_currentObjectURL);
     _currentObjectURL = null;
   }
   mediaEl.removeAttribute('src');
-  // NON chiamare mediaEl.load() qui: resetta i MediaSession handler su alcuni browser
 
   stopYTSeekPoll();
   emit(EV.YT_STOPPED);
@@ -172,9 +179,20 @@ export function playYT(item) {
   saveState();
   emit(EV.VISUAL_UPDATE);
 
-  // Attiva subito il silent anchor e i MediaSession handler.
+  // Attiva subito il silent anchor + MediaSession.
+  // setPositionState con duration fittizia sblocca prev/next
+  // nella tendina di sistema anche prima che il poll parta.
   _mediaSessionYT(item);
   _silentActivate();
+  if ('mediaSession' in navigator) {
+    try {
+      navigator.mediaSession.setPositionState({
+        duration:     0.1,
+        playbackRate: 1,
+        position:     0,
+      });
+    } catch (_) {}
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -193,7 +211,11 @@ export function togglePlay() {
       }
     } catch (_) {}
   } else {
-    mediaEl.paused ? mediaEl.play() : mediaEl.pause();
+    if (mediaEl.paused) {
+      mediaEl.play().catch(() => {});
+    } else {
+      mediaEl.pause();
+    }
   }
 }
 
@@ -213,12 +235,10 @@ export function playNext() {
     if (dequeueNext()) return;
 
     if (store.currentYTId) {
-      // Loop YT
       if (store.looping && store.ytReady && store.ytPlayer) {
         try { store.ytPlayer.seekTo(0); store.ytPlayer.playVideo(); } catch (_) {}
         return;
       }
-      // Shuffle YT: random tra risultati visibili
       if (store.shuffle && store.ytResults.length > 1) {
         const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
         let rndIdx;
@@ -227,7 +247,6 @@ export function playNext() {
         playYT(store.ytResults[rndIdx]);
         return;
       }
-      // Avanza in sequenza nei risultati YT
       const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
       if (curIdx !== -1 && curIdx + 1 < store.ytResults.length) {
         playYT(store.ytResults[curIdx + 1]);
@@ -235,7 +254,6 @@ export function playNext() {
       return;
     }
 
-    // Locale
     let next = store.currentIdx + 1;
     if (store.shuffle && store.shuffleOrder.length) {
       const curPos = store.shuffleOrder.indexOf(store.currentIdx);
@@ -247,7 +265,6 @@ export function playNext() {
 }
 
 export function playPrev() {
-  // Locale: se oltre 3s riparti dall'inizio
   if (!store.currentYTId && mediaEl.currentTime > 3) {
     mediaEl.currentTime = 0;
     return;
@@ -256,7 +273,6 @@ export function playPrev() {
   if (store.playHistory.length) {
     const prev = store.playHistory.pop();
     if (prev && typeof prev === 'object' && prev.yt) {
-      // Entry YT nella cronologia: azzera stato per evitare push duplicato
       store.currentYTId   = null;
       store.currentYTItem = null;
       store.currentIdx    = -1;
@@ -267,7 +283,6 @@ export function playPrev() {
     return;
   }
 
-  // Senza cronologia
   if (!store.currentYTId && store.currentIdx > 0) {
     playLocal(store.currentIdx - 1);
     return;
@@ -283,18 +298,45 @@ export function playPrev() {
    ═══════════════════════════════════════════════════════════════════ */
 
 let _saveTimer = null;
+
 mediaEl.ontimeupdate = () => {
   if (!mediaEl.duration) return;
   seekSlider.value        = (mediaEl.currentTime / mediaEl.duration) * 100;
   timeCurrent.textContent = formatTime(mediaEl.currentTime);
   timeTotal.textContent   = formatTime(mediaEl.duration);
+
+  // Aggiorna posizione nella notifica di sistema
+  if ('mediaSession' in navigator && mediaEl.duration > 0) {
+    try {
+      navigator.mediaSession.setPositionState({
+        duration:     mediaEl.duration,
+        playbackRate: mediaEl.playbackRate || 1,
+        position:     mediaEl.currentTime,
+      });
+    } catch (_) {}
+  }
+
   if (!_saveTimer) {
     _saveTimer = setTimeout(() => { saveState(); _saveTimer = null; }, 1000);
   }
 };
 
-mediaEl.onplay  = () => emit(EV.PLAYER_CHANGE);
-mediaEl.onpause = () => emit(EV.PLAYER_CHANGE);
+mediaEl.onplay = () => {
+  emit(EV.PLAYER_CHANGE);
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = 'playing';
+  }
+  _bindMediaSession();
+};
+
+mediaEl.onpause = () => {
+  emit(EV.PLAYER_CHANGE);
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = 'paused';
+  }
+  _bindMediaSession();
+};
+
 mediaEl.onended = () => {
   if (store.looping) { mediaEl.currentTime = 0; mediaEl.play(); }
   else playNext();
@@ -322,23 +364,22 @@ window.onYouTubeIframeAPIReady = () => {
         if (e.data === YT.PlayerState.PLAYING) {
           emit(EV.YT_PLAYING);
           startYTSeekPoll();
-          // Brave annulla i handler di sistema dopo ogni cambio di stato:
-          // ri-registriamo qui, che e il momento piu affidabile.
           _silentActivate();
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'playing';
             _bindMediaSession();
           }
         }
+
         if (e.data === YT.PlayerState.PAUSED) {
           stopYTSeekPoll();
-          // NON emettere YT_STOPPED qui: usato solo per altri scopi
           // NON fermare _silentEl: Brave rimuoverebbe i controlli di sistema
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'paused';
-            _bindMediaSession(); // ri-registra anche su pausa
+            _bindMediaSession();
           }
         }
+
         if (e.data === YT.PlayerState.ENDED) {
           stopYTSeekPoll();
           if (store.looping && store.ytReady && store.ytPlayer) {
@@ -347,10 +388,11 @@ window.onYouTubeIframeAPIReady = () => {
             playNext();
           }
         }
+
         if (e.data === YT.PlayerState.BUFFERING) {
           _silentActivate();
         }
-        // Passa stato esplicito per evitare race condition con getPlayerState()
+
         emit(EV.PLAYER_CHANGE, { playing: e.data === YT.PlayerState.PLAYING });
       },
     },
@@ -411,8 +453,26 @@ function _mediaSessionYT(item) {
 function _bindMediaSession() {
   if (!('mediaSession' in navigator)) return;
   const ms = navigator.mediaSession;
+
   ms.setActionHandler('play',          () => togglePlay());
   ms.setActionHandler('pause',         () => togglePlay());
   ms.setActionHandler('previoustrack', () => playPrev());
   ms.setActionHandler('nexttrack',     () => playNext());
+
+  // seekbackward/seekforward: richiesti da molti dispositivi BT
+  // per file locali fanno seek; per YT vengono ignorati
+  ms.setActionHandler('seekbackward', (d) => {
+    if (store.currentYTId) return;
+    const s = d?.seekOffset ?? 10;
+    mediaEl.currentTime = Math.max(0, mediaEl.currentTime - s);
+  });
+  ms.setActionHandler('seekforward', (d) => {
+    if (store.currentYTId) return;
+    const s = d?.seekOffset ?? 10;
+    mediaEl.currentTime = Math.min(mediaEl.duration || 0, mediaEl.currentTime + s);
+  });
+
+  // stop: alcuni dispositivi BT lo inviano al posto di pause
+  try { ms.setActionHandler('stop', () => togglePlay()); } catch (_) {}
 }
+
