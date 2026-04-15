@@ -30,11 +30,14 @@ export function togglePlayer(open) {
 /* ── Aggiorna visual ────────────────────────────────────────────── */
 export function updateVisual() {
   if (store.currentYTId) {
+    // YT attivo: nascondi visual, mostra ytWrapper
     visualEl.innerHTML = '';
+    mediaEl.style.display = 'none';
     ytWrapperEl.classList.add('active');
     return;
   }
 
+  // Locale: nascondi ytWrapper
   ytWrapperEl.classList.remove('active');
   visualEl.innerHTML = '';
 
@@ -46,13 +49,15 @@ export function updateVisual() {
   if (track.file.type.startsWith('video/')) {
     mediaEl.style.display   = 'block';
     mediaEl.style.width     = '100%';
-    mediaEl.style.maxHeight = '100%';
+    mediaEl.style.height    = '100%';
+    mediaEl.style.objectFit = 'contain';
     visualEl.appendChild(mediaEl);
   } else {
     mediaEl.style.display = 'none';
     const img = document.createElement('img');
     img.src = track.cover || 'https://placehold.co/512x512';
     img.alt = '';
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;border-radius:12px;';
     visualEl.appendChild(img);
   }
 }
