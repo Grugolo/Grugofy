@@ -322,18 +322,14 @@ mediaEl.ontimeupdate = () => {
 };
 
 mediaEl.onplay = () => {
-  emit(EV.PLAYER_CHANGE);
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = 'playing';
-  }
+  emit(EV.PLAYER_CHANGE, { playing: true });   // ← aggiungi detail
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   _bindMediaSession();
 };
 
 mediaEl.onpause = () => {
-  emit(EV.PLAYER_CHANGE);
-  if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = 'paused';
-  }
+  emit(EV.PLAYER_CHANGE, { playing: false });  // ← aggiungi detail
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   _bindMediaSession();
 };
 
