@@ -66,6 +66,7 @@ setInterval(() => {
 
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
 on(EV.PLAYER_CHANGE, () => updateUI());
+on(EV.PLAYER_CHANGE, ({ playing } = {}) => updateUI(playing));
 
 /* ── updateUI ───────────────────────────────────────────────────── */
 // playingOverride: se definito (solo per YT), usa quel valore invece
