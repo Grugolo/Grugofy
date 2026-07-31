@@ -9,7 +9,9 @@ No installation required—just open it in your browser and start listening.
 
 
 
-<img width="1080" height="2400" alt="Image" src="https://github.com/user-attachments/assets/bbf9c17f-7df0-4eb1-ac91-5fffc1d3609e" />
+<img width="1080" height="2400" alt="Image" src="https://github.com/user-attachments/assets/1c92f67f-9d03-49cc-b1ed-0a3a79b6ae89" />
+
+
 
 
 
