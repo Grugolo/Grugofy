@@ -6,7 +6,17 @@ No installation required—just open it in your browser and start listening.
 
 🔗 **Live Demo:** https://grugolo.github.io/Grugofy/
 
----
+
+
+
+<img width="1080" height="2400" alt="Image" src="https://github.com/user-attachments/assets/bbf9c17f-7df0-4eb1-ac91-5fffc1d3609e" />
+
+
+
+
+
+
+
 
 ## Features
 
@@ -17,7 +27,7 @@ No installation required—just open it in your browser and start listening.
 - 👆 Gesture-based controls for quick navigation
 - 💾 Persistent playlists and queue using `localStorage`
 
----
+
 
 ## Getting Started
 
@@ -33,7 +43,8 @@ git clone https://github.com/grugolo/Grugofy.git
 
 Open `index.html` in your browser.
 
----
+
+
 
 ## Project Structure
 
@@ -56,7 +67,7 @@ grugofy/
 - **modules/** – local media and YouTube integration
 - **ui/** – player controls, expanded player, queue interface
 
----
+
 
 ## Technologies
 
@@ -67,13 +78,13 @@ grugofy/
 - YouTube IFrame Player API
 - Local Storage
 
----
+
 
 ## Browser Support
 
 Grugofy works on all modern Chromium-based browsers and is also compatible with **Safari** and **Firefox**, including their mobile versions.
 
----
+
 
 ## License
 
