@@ -1,4 +1,4 @@
-Grugofy
+# Grugofy
 
 Grugofy is a lightweight, browser-based media player that combines local media playback and YouTube streaming in a single modern interface.
 
@@ -9,7 +9,7 @@ No installation required—just open it in your browser and start listening.
 
 ---
 
-Features
+## Features
 
 🎵 Play local audio and video files
 
@@ -27,13 +27,13 @@ Features
 
 ---
 
-Getting Started
+## Getting Started
 
-Online
+### Online
 
 Visit the live demo and start using Grugofy instantly.
 
-Local
+### Local
 
 git clone https://github.com/grugolo/Grugofy.git
 
@@ -42,7 +42,7 @@ Open index.html in your browser.
 
 ---
 
-Project Structure
+## Project Structure
 
 grugofy/
 ├── README.md
@@ -51,11 +51,20 @@ grugofy/
 ├── style.css
 └── js/
     ├── config.js
-    ├── utils.js
-    ├── main.js
+    ├── utils.js          
+    ├── main.js           
     ├── core/
+    │   ├── store.js      
+    │   ├── events.js     
+    │   ├── player.js     
+    │   └── queue.js     
     ├── modules/
+    │   ├── localFiles.js
+    │   └── youtube.js   
     └── ui/
+        ├── controls.js      
+        ├── expandedPlayer.js
+        └── queueUI.js 
 
 core/ – application state, playback engine, queue logic, event bus
 
@@ -67,7 +76,7 @@ ui/ – player controls, expanded player, queue interface
 
 ---
 
-Technologies
+## Technologies
 
 HTML5
 
@@ -85,14 +94,14 @@ Local Storage
 
 ---
 
-Browser Support
+## Browser Support
 
 Grugofy works on all modern Chromium-based browsers and is also compatible with Safari and Firefox, including their mobile versions.
 
 
 ---
 
-License
+## License
 
 Released under the MIT License.
 
