@@ -1,6 +1,7 @@
 // js/ui/library.js
-import { play } from '../core/player.js';
+import { playLocal } from '../core/player.js';
 import { on } from '../core/events.js';
+import { formatTime } from '../utils.js';
 
 const libraryContainer = document.getElementById('libraryList');
 
@@ -18,31 +19,20 @@ export function renderLibrary(tracks) {
     li.dataset.index = index;
 
     li.innerHTML = `
-      <img class="cover" src="${track.cover || ''}" alt="cover">
-      <div class="info">
-        <div class="title">${track.title || 'Unknown'}</div>
-        <div class="duration">${track.duration ? formatTime(track.duration) : '--:--'}</div>
+      <div class="info" style="padding: 10px; cursor: pointer;">
+        <div class="title" style="font-weight: bold;">${track.file ? track.file.name : 'Unknown'}</div>
+        <div class="duration" style="font-size: 0.8rem; color: #888;">${track.duration ? formatTime(track.duration) : '--:--'}</div>
       </div>
     `;
 
     li.addEventListener('click', () => {
-      play(track);
+      playLocal(index);
     });
 
     libraryContainer.appendChild(li);
   });
 }
 
-/**
- * Helper per convertire secondi in mm:ss
- */
-function formatTime(sec) {
-  const minutes = Math.floor(sec / 60);
-  const seconds = Math.floor(sec % 60).toString().padStart(2, '0');
-  return `${minutes}:${seconds}`;
-}
-
-// --- OPZIONALE: ascolta eventi per aggiornare libreria dinamicamente ---
 on('libraryUpdate', (tracks) => {
   renderLibrary(tracks);
 });
