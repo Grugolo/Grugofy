@@ -1,125 +1,120 @@
-// ── queueUI.js ───────────────────────────────────────────────────
-// Rendering DOM di coda e playlist salvate.
+/**
+ * js/ui/queueUI.js
+ * Gestione dell'interfaccia della coda di riproduzione e delle playlist
+ */
 
-import { store }       from '../core/store.js';
-import { escHtml, showToast } from '../utils.js';
-import {
-  removeFromQueue, reorderQueue,
-  loadPlaylists,
-  saveQueueAsPlaylist,
-  saveHistoryAsPlaylist,
-  loadPlaylistIntoQueue,
-  deletePlaylist,
-} from '../core/queue.js';
+import { store } from '../core/store.js';
+import { removeFromQueue, reorderQueue, loadPlaylists, savePlaylists } from '../core/queue.js';
+import { playLocal, playYT } from '../core/player.js';
 
-/* ── DOM refs ───────────────────────────────────────────────────── */
-const queueListEl    = document.getElementById('queueList');
-const playlistListEl = document.getElementById('playlistList');
-const queueSection   = document.getElementById('queueSection');
+const queueListEl = document.getElementById('queueList');
+const queueSection = document.getElementById('queueSection');
+const playlistsListEl = document.getElementById('playlistsList');
 
-/* ═══════════════════════════════════════════════════════════════════
-   CODA
-   ═══════════════════════════════════════════════════════════════════ */
+let dragSrcIndex = null;
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function iconX() {
+  return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+}
 
 export function renderQueue() {
+  if (!queueListEl || !queueSection) return;
+
   queueListEl.innerHTML = '';
-  queueSection.hidden   = store.queue.length === 0;
+  queueSection.hidden = store.queue.length === 0;
 
   store.queue.forEach((item, i) => {
-    const div   = document.createElement('div');
-    const title = item.type === 'youtube' ? item.title : item.file.name;
+    const div = document.createElement('div');
+    div.className = 'queue-item';
+    div.draggable = true; // Abilita HTML5 Drag Nativo per Desktop
+    div.dataset.index = i;
 
-    div.dataset.dragItem = i;
+    const title = item.yt ? item.title : item.file.name;
+
     div.innerHTML = `
-      <span style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.85rem;">
-        ${escHtml(title)}
-      </span>
-      <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
-        <button data-rem="${i}" aria-label="Rimuovi">${_iconX()}</button>
-        <span class="drag-handle" data-drag="${i}" aria-label="Trascina per riordinare">☰</span>
-      </div>`;
+      <span class="queue-item-title">${escHtml(title)}</span>
+      <div class="queue-item-actions">
+        <button class="btn-remove" data-rem="${i}" aria-label="Rimuovi">${iconX()}</button>
+        <span class="drag-handle" aria-label="Trascina per riordinare">☰</span>
+      </div>
+    `;
 
-    div.querySelector('[data-rem]').onclick = () => removeFromQueue(i);
+    // --- Drag & Drop Desktop Nativo ---
+    div.addEventListener('dragstart', (e) => {
+      dragSrcIndex = i;
+      e.dataTransfer.effectAllowed = 'move';
+      div.classList.add('dragging');
+    });
+
+    div.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+
+    div.addEventListener('dragenter', () => div.classList.add('drag-over'));
+    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+
+    div.addEventListener('drop', (e) => {
+      e.preventDefault();
+      div.classList.remove('drag-over');
+      if (dragSrcIndex !== null && dragSrcIndex !== i) {
+        reorderQueue(dragSrcIndex, i);
+      }
+    });
+
+    div.addEventListener('dragend', () => {
+      dragSrcIndex = null;
+      div.classList.remove('dragging');
+    });
+
+    // Riproduzione al click sulla traccia
+    div.onclick = (e) => {
+      if (e.target.closest('button') || e.target.closest('.drag-handle')) return;
+      if (item.yt) {
+        playYT(item);
+      } else {
+        playLocal(item.index);
+      }
+    };
+
+    // Rimozione
+    div.querySelector('[data-rem]').onclick = (e) => {
+      e.stopPropagation();
+      removeFromQueue(i);
+    };
+
     queueListEl.appendChild(div);
   });
 }
 
-/* ── Drag & drop touch ──────────────────────────────────────────── */
-let _dragIdx = null;
-
-queueListEl.addEventListener('touchstart', e => {
-  const handle = e.target.closest('[data-drag]');
-  if (!handle) return;
-  _dragIdx = parseInt(handle.dataset.drag);
-  e.stopPropagation();
-}, { passive: false });
-
-queueListEl.addEventListener('touchmove', e => {
-  if (_dragIdx === null) return;
-  e.preventDefault();
-  const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY)
-               ?.closest('[data-drag-item]');
-  if (!el) return;
-  const overIdx = parseInt(el.dataset.dragItem);
-  if (overIdx !== _dragIdx) {
-    reorderQueue(_dragIdx, overIdx);
-    _dragIdx = overIdx;
-  }
-}, { passive: false });
-
-queueListEl.addEventListener('touchend', () => { _dragIdx = null; });
-
-/* ═══════════════════════════════════════════════════════════════════
-   SALVA CODA / CRONOLOGIA
-   ═══════════════════════════════════════════════════════════════════ */
-
-document.getElementById('saveQueueBtn').onclick = () => {
-  const name = prompt('Nome Playlist:', 'Playlist ' + new Date().toLocaleDateString());
-  if (name) saveQueueAsPlaylist(name);
-};
-
-document.getElementById('saveHistoryBtn').onclick = () => {
-  // FIX: rimosso il guard su playHistory.length — saveHistoryAsPlaylist
-  // include anche il brano corrente, quindi funziona anche con un solo brano.
-  const start = store.sessionStart || new Date();
-  const now   = new Date();
-  const _fmt  = d => `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
-  const date  = `${start.getDate()}/${start.getMonth()+1}/${String(start.getFullYear()).slice(-2)}`;
-  const name  = prompt('Nome playlist:', `${date} ${_fmt(start)} - ${_fmt(now)}`);
-  if (name) saveHistoryAsPlaylist(name);
-};
-
-/* ═══════════════════════════════════════════════════════════════════
-   PLAYLIST SALVATE
-   ═══════════════════════════════════════════════════════════════════ */
-
 export function renderPlaylists() {
-  playlistListEl.innerHTML = '';
-  const all = loadPlaylists();
+  if (!playlistsListEl) return;
+  playlistsListEl.innerHTML = '';
+  const playlists = loadPlaylists();
 
-  Object.keys(all).forEach(name => {
-    const div = document.createElement('div');
-    div.innerHTML = `
-      <span style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.85rem;">
-        ${escHtml(name)}
-      </span>
-      <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
-        <button data-del aria-label="Elimina">${_iconX()}</button>
-        <button data-load style="color:var(--accent);font-weight:700;font-size:.7rem;">CARICA</button>
-      </div>`;
+  Object.keys(playlists).forEach(name => {
+    const li = document.createElement('li');
+    li.className = 'playlist-entry';
+    li.innerHTML = `
+      <span>🎵 ${escHtml(name)} (${playlists[name].length})</span>
+      <button data-del="${escHtml(name)}" class="btn-remove">${iconX()}</button>
+    `;
 
-    div.querySelector('[data-load]').onclick = () => loadPlaylistIntoQueue(name);
-    div.querySelector('[data-del]').onclick  = () => {
-      if (confirm(`Eliminare "${name}"?`)) deletePlaylist(name);
+    li.querySelector('[data-del]').onclick = (e) => {
+      e.stopPropagation();
+      delete playlists[name];
+      savePlaylists(playlists);
+      renderPlaylists();
     };
-    playlistListEl.appendChild(div);
-  });
-}
 
-/* ── Icona X SVG ────────────────────────────────────────────────── */
-function _iconX() {
-  return `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-    <line x1="2" y1="2" x2="14" y2="14" stroke="#ff4444" stroke-width="2" stroke-linecap="round"/>
-    <line x1="14" y1="2" x2="2"  y2="14" stroke="#ff4444" stroke-width="2" stroke-linecap="round"/>
-  </svg>`;
+    playlistsListEl.appendChild(li);
+  });
 }
