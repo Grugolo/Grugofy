@@ -49,10 +49,16 @@ header {
   padding: 10px 15px;
   border-radius: 20px;
   font-weight: 700;
-  font-size: .8rem;
+  font-size: 1.3rem;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
 }
 
 .search-wrapper {
@@ -104,6 +110,20 @@ header {
   margin: 20px 0 10px;
 }
 
+/* Indicatore visivo collasso (▾ / ▸) tramite ::after */
+.section-title[data-collapsed="1"]::after,
+.section-header .section-title[data-collapsed="1"]::after {
+  content: ' ▸';
+  font-size: .65rem;
+  opacity: .6;
+}
+.section-title:not([data-collapsed="1"])::after,
+.section-header .section-title:not([data-collapsed="1"])::after {
+  content: ' ▾';
+  font-size: .65rem;
+  opacity: .4;
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -112,6 +132,16 @@ header {
 }
 .section-header .section-title { margin: 0; }
 
+/* Collassabilità: click sul .section-header intero chiude il body */
+.section-header {
+  cursor: pointer;
+  user-select: none;
+}
+/* Ma i pulsanti interni non devono propagare il click */
+.section-header button {
+  pointer-events: auto;
+}
+
 .pill-btn {
   background: var(--accent);
   color: #000;
@@ -119,7 +149,29 @@ header {
   padding: 5px 12px;
   font-weight: 700;
   font-size: .7rem;
+  flex-shrink: 0;
 }
+
+/* Variante rossa: svuota coda */
+.pill-btn--danger {
+  background: transparent;
+  color: #ff4444;
+  border: 1px solid #ff4444;
+  padding: 4px 9px;
+  font-size: .75rem;
+}
+.pill-btn--danger:active { background: rgba(255,68,68,.15); }
+
+/* Variante blue: export */
+.pill-btn--blue {
+  background: transparent;
+  border: 1px solid #4fc3f7;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pill-btn--blue:active { background: rgba(79,195,247,.15); }
 
 /* ── Queue & Playlist lists ────────────────────────────────────── */
 #queueList > div,
@@ -156,6 +208,20 @@ header {
   color: var(--accent);
   cursor: pointer;
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Indicatore collasso per folder-group */
+.folder-name::after {
+  content: '▾';
+  font-size: .65rem;
+  opacity: .5;
+  transition: transform .2s;
+}
+.folder-name.collapsed::after {
+  transform: rotate(-90deg);
 }
 
 /* ── Track item ────────────────────────────────────────────────── */
@@ -192,15 +258,26 @@ header {
 .track-name    { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9rem; font-weight: 700; }
 
 .track-meta-row {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
   font-size: .7rem; color: var(--text-dim); margin-top: 2px;
+  flex-wrap: wrap;
 }
 
 .file-format {
   text-transform: uppercase; font-weight: 700; color: #888;
   background: rgba(255,255,255,.05); padding: 1px 4px; border-radius: 3px;
+  flex-shrink: 0;
 }
 .file-format.yt { color: #fff; background: rgba(255,0,0,.25); border: 1px solid rgba(255,0,0,.3); }
+
+/* Data pubblicazione YT */
+.pub-date {
+  color: #5c9ccc;
+  font-size: .65rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: .3px;
+}
 
 /* ── Player bar ────────────────────────────────────────────────── */
 #playerBar {
@@ -257,7 +334,7 @@ header {
   top: 100%;
   left: 0;
   width: 100%;
-  height: calc(100dvh - var(--player-h));  /* altezza esatta */
+  height: calc(100dvh - var(--player-h));
   background: #000;
   z-index: 1000;
   transition: top .3s ease;
@@ -284,7 +361,7 @@ header {
 
 /* ── YT wrapper inside expanded ────────────────────────────────── */
 #ytWrapper {
-  position: absolute;   /* ← era mancante */
+  position: absolute;
   inset: 0;
   opacity: 0;
   pointer-events: none;
@@ -344,10 +421,112 @@ header {
 /* ── SVG icons (inline) ────────────────────────────────────────── */
 .ctrl-btn svg { pointer-events: none; }
 
-
-
-
-
 .hidden {
   display: none !important;
+}
+
+
+/* ── Dropdown Upload Menu ───────────────────────────────────────── */
+.dropdown-menu {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  background: #252525;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  min-width: 180px;
+  overflow: hidden;
+}
+
+.dropdown-menu button {
+  padding: 12px 15px;
+  text-align: left;
+  font-size: 0.85rem;
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.dropdown-menu button:hover {
+  background: var(--border);
+}
+
+/* ── Modale YT Link ─────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  padding: 15px;
+}
+
+.modal-content {
+  background: #1e1e1e;
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 450px;
+  border: 1px solid var(--border);
+}
+
+.modal-input, .modal-textarea {
+  width: 100%;
+  background: #2a2a2a;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: #fff;
+  padding: 10px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.modal-textarea {
+  height: 120px;
+  resize: vertical;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+/* ── Desktop Track Actions ──────────────────────────────────────── */
+.track-actions-desktop {
+  display: flex;
+  gap: 5px;
+  margin-left: 8px;
+}
+
+.btn-q-add {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+
+.btn-q-add:hover {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+/* ── Ripristino Drag Handle per Desktop ────────────────────────── */
+[draggable="true"] {
+  user-select: none;
 }
