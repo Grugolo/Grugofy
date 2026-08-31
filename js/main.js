@@ -1,117 +1,60 @@
-// ── main.js ──────────────────────────────────────────────────────
-// Entry point. Importa i moduli e collega le interazioni globali
-// che non appartengono a nessun modulo specifico.
+/**
+ * js/main.js
+ * Entry point dell'applicazione Grugofy
+ */
 
-// Side-effect imports (registrano event listener all'import)
-import './modules/localFiles.js';
-import './ui/controls.js';
+import { store } from './core/store.js';
+import { loadState } from './core/persist.js';
+import { renderQueue, renderPlaylists } from './ui/queueUI.js';
+import { showImporterModal, initImporterUI } from './modules/importer.js';
 
-// Funzioni da usare in questo modulo
-import { updateUI }                         from './ui/controls.js';
-import { renderPlaylists, renderQueue }     from './ui/queueUI.js';
-import { setupExpandedSwipe, togglePlayer } from './ui/expandedPlayer.js';
-import { scheduleYTSearch }                 from './modules/youtube.js';
-import { loadState }                        from './core/persist.js';
-import { playLocal, playYT }                from './core/player.js';
-import { store }                            from './core/store.js';
-
-/* ── Barra di ricerca ───────────────────────────────────────────── */
-const searchInput = document.getElementById('searchInput');
-const clearBtn    = document.getElementById('clearSearchBtn');
-
-searchInput.addEventListener('input', e => {
-  const val = e.target.value.toLowerCase();
-
-  clearBtn.classList.toggle('active', val.length > 0);
-
-  // FIX BUG 1: escludi il gruppo YT ([data-yt-group]) dal filtro locale —
-  // la sua visibilità è gestita interamente da youtube.js
-  document.querySelectorAll('.folder-group:not([data-yt-group])').forEach(group => {
-    let visible = false;
-
-    group.querySelectorAll('.track-item').forEach(item => {
-      const text = item.querySelector('.track-name')?.textContent || '';
-      const match = text.toLowerCase().includes(val);
-      item.style.display = match ? 'flex' : 'none';
-      if (match) visible = true;
-    });
-
-    group.style.display = visible ? '' : 'none';
-  });
-
-  scheduleYTSearch(val);
-});
-
-clearBtn.onclick = () => {
-  searchInput.value = '';
-  searchInput.dispatchEvent(new Event('input'));
-  searchInput.focus();
-};
-
-/* ── Now-playing title: click → espandi; swipe → prev/next ─────── */
-const titleEl = document.getElementById('nowPlayingTitle');
-titleEl.addEventListener('click', () => togglePlayer(true));
-
-let _sx = 0, _sy = 0;
-titleEl.addEventListener('touchstart', e => {
-  _sx = e.touches[0].clientX;
-  _sy = e.touches[0].clientY;
-}, { passive: true });
-
-titleEl.addEventListener('touchend', e => {
-  const dx = e.changedTouches[0].clientX - _sx;
-  const dy = e.changedTouches[0].clientY - _sy;
-  const T  = 50;
-  if (Math.abs(dx) > Math.abs(dy)) {
-    if (dx < -T) document.getElementById('btnNext').click();
-    if (dx >  T) document.getElementById('btnPrev').click();
-  } else {
-    if (dy < -T) togglePlayer(true);
-    if (dy >  T) togglePlayer(false);
-  }
-}, { passive: true });
-
-/* ── Globali per eventuale uso futuro da console / estensioni ────── */
-window._playLocal   = playLocal;
-window.togglePlayer = togglePlayer;
-
-/* ── Inizializzazione ───────────────────────────────────────────── */
-window.addEventListener('load', () => {
-  updateUI();
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Inizializza i moduli UI
+  initImporterUI();
+  loadState();
   renderQueue();
   renderPlaylists();
-  setupExpandedSwipe();
 
-  const state = loadState();
+  // 2. Menu Dropdown per il Pulsante "+" (File o YouTube)
+  const btnUploadMenu = document.getElementById('btnUploadMenu');
+  const uploadMenu     = document.getElementById('uploadMenu');
+  const menuOptionFile = document.getElementById('menuOptionFile');
+  const menuOptionYT   = document.getElementById('menuOptionYTLink');
+  const folderInput    = document.getElementById('folderInput');
 
-  if (state) {
-    // ripristina coda
-    state.queue.forEach(item => {
-      if (item.yt) {
-        store.queue.push({
-          type: 'youtube',
-          id: item.id,
-          title: item.title,
-          thumb: `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`,
-        });
-      }
+  if (btnUploadMenu && uploadMenu) {
+    btnUploadMenu.onclick = (e) => {
+      e.stopPropagation();
+      uploadMenu.classList.toggle('hidden');
+    };
+
+    document.addEventListener('click', () => {
+      uploadMenu.classList.add('hidden');
     });
 
-    // ripristina YT
-    if (state.current?.ytId) {
-      playYT({
-        id: state.current.ytId,
-        title: state.current.title || 'YouTube'
-      });
+    menuOptionFile.onclick = () => {
+      uploadMenu.classList.add('hidden');
+      folderInput?.click();
+    };
 
-      setTimeout(() => {
-        try {
-          store.ytPlayer.seekTo(state.current.time || 0);
-          if (state.current.paused) store.ytPlayer.pauseVideo();
-        } catch {}
-      }, 1000);
-    }
+    menuOptionYT.onclick = () => {
+      uploadMenu.classList.add('hidden');
+      showImporterModal();
+    };
+  }
 
-    renderQueue();
+  // 3. Desktop Media Player Toggle (Apre / Chiude l'Espanso al Click)
+  const nowPlayingTitle = document.getElementById('nowPlayingTitle');
+  const expandedPlayer  = document.getElementById('expandedPlayer');
+
+  if (nowPlayingTitle && expandedPlayer) {
+    nowPlayingTitle.addEventListener('click', () => {
+      const isOpen = expandedPlayer.classList.contains('open');
+      if (isOpen) {
+        expandedPlayer.classList.remove('open');
+      } else {
+        expandedPlayer.classList.add('open');
+      }
+    });
   }
 });
