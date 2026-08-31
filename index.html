@@ -6,40 +6,31 @@
   <title>Grugofy</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
-
-  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
-  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
-  <link rel="shortcut icon" href="/favicon/favicon.ico" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
-  <link rel="manifest" href="/favicon/site.webmanifest" />
 </head>
 <body>
 
 <header>
+  <!-- Fixed Dropdown Upload Menu Structure -->
   <div style="position: relative;">
-    <button id="btnUploadMenu" class="btn-upload">+</button>
+    <button class="btn-upload" id="btnUploadMenu" title="Aggiungi file o link">+</button>
     <div id="uploadMenu" class="dropdown-menu hidden">
       <button id="menuOptionFile">📁 Carica Cartella/File</button>
-      <button id="menuOptionYTLink">🔗 Importa Link YouTube</button>
+      <button id="menuOptionYTLink">🌐 Importa da YouTube</button>
     </div>
   </div>
-  <input id="folderInput" type="file" webkitdirectory multiple accept="audio/*,video/*">
+  <input id="folderInput" type="file" webkitdirectory multiple accept="audio/*,video/*" class="hidden">
 
   <div class="search-wrapper">
-    <input type="text" id="searchInput" placeholder="Cerca brano…" autocomplete="off">
+    <input type="text" id="searchInput" placeholder="Cerca brano (Locale o YT)…" autocomplete="off">
     <button id="clearSearchBtn">✕</button>
   </div>
 </header>
 
 <main id="mainContent">
-
   <section id="queueSection" hidden>
     <div class="section-header">
       <span class="section-title">In Coda</span>
-      <div>
-        <button id="saveQueueBtn" class="pill-btn">SALVA CODA</button>
-        <button id="clearQueueBtn" class="pill-btn pill-btn--danger">SVUOTA</button>
-      </div>
+      <button id="saveQueueBtn" class="pill-btn">SALVA CODA</button>
     </div>
     <div id="queueList"></div>
   </section>
@@ -47,19 +38,13 @@
   <section id="playlistSection">
     <div class="section-header">
       <span class="section-title">Playlist Salvate</span>
-      <div>
-        <button id="saveHistoryBtn" class="pill-btn">SALVA CRONOLOGIA</button>
-        <button id="exportPlaylistsBtn" class="pill-btn pill-btn--blue">ZIP</button>
-      </div>
+      <button id="saveHistoryBtn" class="pill-btn">SALVA CRONOLOGIA</button>
     </div>
-    <ul id="playlistsList" style="list-style:none;"></ul>
+    <div id="playlistList"></div>
   </section>
 
   <span class="section-title">Libreria</span>
-  <div id="library">
-    <ul id="libraryList" style="list-style:none;"></ul>
-  </div>
-
+  <div id="library"></div>
 </main>
 
 <!-- Player bar fissa -->
