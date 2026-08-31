@@ -1,14 +1,13 @@
-// ── queue.js ─────────────────────────────────────────────────────
-import { store }          from './store.js';
-import { showToast }      from '../utils.js';
-import { saveState }      from './persist.js';
-import { emit, EV }       from './events.js';
+import { store } from './store.js';
+import { showToast } from '../utils.js';
+import { saveState } from './persist.js';
+import { emit, EV } from './events.js';
 import JSZip from 'https://esm.sh/jszip@3.10.1';
 
 const LS_KEY = 'f_p';
 
 function _queueChanged() {
-  _refreshQueueUI();
+  import('../ui/queueUI.js').then(m => m.renderQueue());
   saveState();
   emit(EV.QUEUE_CHANGE);
 }
@@ -57,8 +56,8 @@ export function loadPlaylists() {
   catch { return {}; }
 }
 
-export function savePlaylists(playlists) {
-  localStorage.setItem(LS_KEY, JSON.stringify(playlists));
+export function savePlaylists(playlistsObj) {
+  localStorage.setItem(LS_KEY, JSON.stringify(playlistsObj));
 }
 
 export function saveQueueAsPlaylist(name) {
@@ -66,7 +65,7 @@ export function saveQueueAsPlaylist(name) {
   const all = loadPlaylists();
   all[name] = store.queue.map(_serialize);
   savePlaylists(all);
-  _refreshPlaylistUI();
+  import('../ui/queueUI.js').then(m => m.renderPlaylists());
 }
 
 export function saveHistoryAsPlaylist(name) {
@@ -89,12 +88,12 @@ export function saveHistoryAsPlaylist(name) {
     entries.push({ n: cur.file.name, f: cur.folder });
   }
 
-  if (!entries.length) { showToast('Vuota!'); return; }
+  if (!entries.length) { showToast('Cronologia vuota!'); return; }
 
   const all = loadPlaylists();
   all[name] = entries;
   savePlaylists(all);
-  _refreshPlaylistUI();
+  import('../ui/queueUI.js').then(m => m.renderPlaylists());
   showToast('Cronologia salvata');
 }
 
@@ -104,11 +103,11 @@ export function loadPlaylistIntoQueue(name) {
   all[name].forEach(s => {
     if (s.yt) {
       store.queue.push({
-        type:     'youtube',
-        yt:       true,
-        id:       s.id,
-        title:    s.title,
-        thumb:    `https://img.youtube.com/vi/${s.id}/mqdefault.jpg`,
+        type: 'youtube',
+        yt: true,
+        id: s.id,
+        title: s.title,
+        thumb: `https://img.youtube.com/vi/${s.id}/mqdefault.jpg`,
         duration: s.duration || 0,
       });
     } else {
@@ -117,64 +116,10 @@ export function loadPlaylistIntoQueue(name) {
     }
   });
   _queueChanged();
-  showToast('Caricata!');
-}
-
-export function deletePlaylist(name) {
-  const all = loadPlaylists();
-  delete all[name];
-  savePlaylists(all);
-  _refreshPlaylistUI();
-}
-
-export async function exportAllPlaylists() {
-  const all = loadPlaylists();
-  const names = Object.keys(all);
-
-  if (!names.length) {
-    showToast('Nessuna playlist da esportare');
-    return;
-  }
-
-  const zip = new JSZip();
-
-  names.forEach(name => {
-    let textContent = '';
-    all[name].forEach(entry => {
-      if (entry.yt) {
-        textContent += `${entry.title}, ${entry.id}, ${entry.duration || 0}\n`;
-      } else {
-        textContent += `${entry.n}, ${entry.f}\n`;
-      }
-    });
-    const safeFileName = name.replace(/[/\\?%*:|"<>]/g, '_');
-    zip.file(`${safeFileName}.txt`, textContent);
-  });
-
-  try {
-    showToast('Generazione ZIP in corso...');
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `Grugofy_Playlists_${new Date().toISOString().slice(0, 10)}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Playlists esportate!');
-  } catch (err) {
-    console.error('Errore creazione ZIP:', err);
-    showToast('Errore durante l\'esportazione');
-  }
+  showToast('Caricata in coda!');
 }
 
 function _serialize(item) {
-  if (item?.type === 'youtube' || item?.yt) {
-    return { yt: true, id: item.id, title: item.title, duration: item.duration || 0 };
-  }
+  if (item?.type === 'youtube' || item?.yt) return { yt: true, id: item.id, title: item.title, duration: item.duration || 0 };
   return { n: item.file.name, f: item.folder };
 }
-
-function _refreshQueueUI()    { import('../ui/queueUI.js').then(m => m.renderQueue()); }
-function _refreshPlaylistUI() { import('../ui/queueUI.js').then(m => m.renderPlaylists()); }
