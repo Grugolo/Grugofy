@@ -1,12 +1,7 @@
-/**
- * js/modules/importer.js
- * Modulo per il recupero e l'importazione di Link/Playlist YouTube
- */
-
 import { parseYouTubeUrl, fetchPlaylistTracks, fetchVideoDetails } from '../services/ytService.js';
 import { loadPlaylists, savePlaylists } from '../core/queue.js';
 import { renderPlaylists } from '../ui/queueUI.js';
-import { showToast } from '../ui/toast.js';
+import { showToast } from '../utils.js'; // Fixed path
 
 let modalEl = null;
 
@@ -18,14 +13,14 @@ export function initImporterUI() {
       <div class="modal-content">
         <h3>Importa da YouTube</h3>
         
-        <label class="modal-label">Chiave API Google (opzionale per link singoli, richiesta per Playlist):</label>
+        <label class="modal-label">Chiave API Google (opzionale per link singoli):</label>
         <input type="password" id="ytApiKeyInput" placeholder="Incolla API Key Google Data v3..." class="modal-input" style="margin-bottom:12px;">
 
         <label class="modal-label">Nome Playlist di destinazione:</label>
         <input type="text" id="ytLinkPlaylistName" placeholder="Es. My YT Hits" class="modal-input">
         
         <label class="modal-label">Incolla URL Video o Playlist YouTube (uno per riga):</label>
-        <textarea id="ytLinkInput" class="modal-textarea" placeholder="https://www.youtube.com/watch?v=...&#10;https://www.youtube.com/playlist?list=..."></textarea>
+        <textarea id="ytLinkInput" class="modal-textarea" placeholder="https://www.youtube.com/watch?v=..."></textarea>
         
         <div class="modal-actions">
           <button id="btnCancelYTLink" class="pill-btn pill-btn--danger">Annulla</button>
@@ -98,14 +93,13 @@ async function processImport() {
       return;
     }
 
-    // Salva nella memoria locale
     const playlists = loadPlaylists();
     playlists[name] = accumulatedTracks;
     savePlaylists(playlists);
 
     renderPlaylists();
     hideImporterModal();
-    showToast(`Playlist "${name}" creata con successo con ${accumulatedTracks.length} brani!`);
+    showToast(`Playlist "${name}" creata con ${accumulatedTracks.length} brani!`);
 
   } catch (err) {
     console.error(err);
