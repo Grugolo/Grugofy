@@ -1,10 +1,9 @@
 /**
  * js/ui/queueUI.js
- * Gestione dell'interfaccia della coda di riproduzione e delle playlist
  */
 
 import { store } from '../core/store.js';
-import { removeFromQueue, reorderQueue, loadPlaylists, savePlaylists } from '../core/queue.js';
+import { removeFromQueue, reorderQueue, loadPlaylists, deletePlaylist, loadPlaylistIntoQueue } from '../core/queue.js';
 import { playLocal, playYT } from '../core/player.js';
 
 const queueListEl = document.getElementById('queueList');
@@ -14,7 +13,7 @@ const playlistsListEl = document.getElementById('playlistsList');
 let dragSrcIndex = null;
 
 function escHtml(str) {
-  return String(str)
+  return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -34,20 +33,19 @@ export function renderQueue() {
   store.queue.forEach((item, i) => {
     const div = document.createElement('div');
     div.className = 'queue-item';
-    div.draggable = true; // Abilita HTML5 Drag Nativo per Desktop
+    div.draggable = true;
     div.dataset.index = i;
 
-    const title = item.yt ? item.title : item.file.name;
+    const title = (item.yt || item.type === 'youtube') ? item.title : (item.file?.name || 'Traccia');
 
     div.innerHTML = `
-      <span class="queue-item-title">${escHtml(title)}</span>
+      <span class="queue-item-title" style="flex:1; cursor:pointer;">${escHtml(title)}</span>
       <div class="queue-item-actions">
         <button class="btn-remove" data-rem="${i}" aria-label="Rimuovi">${iconX()}</button>
         <span class="drag-handle" aria-label="Trascina per riordinare">☰</span>
       </div>
     `;
 
-    // --- Drag & Drop Desktop Nativo ---
     div.addEventListener('dragstart', (e) => {
       dragSrcIndex = i;
       e.dataTransfer.effectAllowed = 'move';
@@ -59,12 +57,8 @@ export function renderQueue() {
       e.dataTransfer.dropEffect = 'move';
     });
 
-    div.addEventListener('dragenter', () => div.classList.add('drag-over'));
-    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
-
     div.addEventListener('drop', (e) => {
       e.preventDefault();
-      div.classList.remove('drag-over');
       if (dragSrcIndex !== null && dragSrcIndex !== i) {
         reorderQueue(dragSrcIndex, i);
       }
@@ -75,17 +69,16 @@ export function renderQueue() {
       div.classList.remove('dragging');
     });
 
-    // Riproduzione al click sulla traccia
     div.onclick = (e) => {
       if (e.target.closest('button') || e.target.closest('.drag-handle')) return;
-      if (item.yt) {
+      if (item.yt || item.type === 'youtube') {
         playYT(item);
       } else {
-        playLocal(item.index);
+        const idx = store.playlist.indexOf(item);
+        if (idx !== -1) playLocal(idx);
       }
     };
 
-    // Rimozione
     div.querySelector('[data-rem]').onclick = (e) => {
       e.stopPropagation();
       removeFromQueue(i);
@@ -103,16 +96,21 @@ export function renderPlaylists() {
   Object.keys(playlists).forEach(name => {
     const li = document.createElement('li');
     li.className = 'playlist-entry';
+    li.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--card2); margin-bottom:5px; border-radius:8px; cursor:pointer;';
+    
     li.innerHTML = `
       <span>🎵 ${escHtml(name)} (${playlists[name].length})</span>
       <button data-del="${escHtml(name)}" class="btn-remove">${iconX()}</button>
     `;
 
+    li.onclick = (e) => {
+      if (e.target.closest('[data-del]')) return;
+      loadPlaylistIntoQueue(name);
+    };
+
     li.querySelector('[data-del]').onclick = (e) => {
       e.stopPropagation();
-      delete playlists[name];
-      savePlaylists(playlists);
-      renderPlaylists();
+      deletePlaylist(name);
     };
 
     playlistsListEl.appendChild(li);
