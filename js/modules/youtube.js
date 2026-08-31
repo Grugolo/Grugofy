@@ -1,9 +1,8 @@
-// ── youtube.js ───────────────────────────────────────────────────
 import { YT_API_KEY }                        from '../config.js';
 import { store }                             from '../core/store.js';
 import { playYT }                            from '../core/player.js';
-import { makeYTTrackEl }                     from './ytUI.js';
-import { parseISO8601, decodeHtml }          from '../utils.js';
+import { makeYTTrackEl }                     from './ytUI.js'; // Fixed to use YT specific UI element
+import { parseISO8601, escHtml, decodeHtml } from '../utils.js';
   
 let ytGroup = null;
 let ytTracksEl = null;
@@ -37,23 +36,20 @@ async function _search(q) {
   ytTracksEl.hidden = false;
   
   try {
-    const searchRes  = await fetch(
-      `https://www.googleapis.com/youtube/v3/search` +
-      `?part=snippet&type=video&maxResults=6` +
-      `&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`
+    const searchRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=6&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`
     );
     const searchData = await searchRes.json();
-    const items      = searchData.items || [];
+    const items = searchData.items || [];
 
     if (!items.length) {
       ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
       return;
     }
 
-    const ids        = items.map(i => i.id.videoId).join(',');
-    const detailRes  = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos` +
-      `?part=contentDetails&id=${ids}&key=${YT_API_KEY}`
+    const ids = items.map(i => i.id.videoId).join(',');
+    const detailRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YT_API_KEY}`
     );
     const detailData = await detailRes.json();
 
@@ -62,14 +58,13 @@ async function _search(q) {
     );
 
     store.ytResults = items.map(item => ({
-      type:      'youtube',
-      yt:        true,
-      id:        item.id.videoId,
-      title:     decodeHtml(item.snippet.title),
-      thumb:     item.snippet.thumbnails?.medium?.url || '',
-      thumbnail: item.snippet.thumbnails?.medium?.url || '',
-      duration:  durationMap[item.id.videoId] || 0,
-      uploader:  decodeHtml(item.snippet.channelTitle || 'YouTube'),
+      type:     'youtube',
+      id:       item.id.videoId,
+      title:    decodeHtml(item.snippet.title),
+      thumb:    item.snippet.thumbnails?.medium?.url || '',
+      thumbnail: item.snippet.thumbnails?.default?.url || '', // per makeYTTrackEl
+      duration: durationMap[item.id.videoId] || 0,
+      uploader: decodeHtml(item.snippet.channelTitle || 'YouTube'),
     }));
     
     if (reqId !== _lastReqId) return;
@@ -77,7 +72,7 @@ async function _search(q) {
 
   } catch (err) {
     console.error('[YT search]', err);
-    ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Errore nella ricerca</div>`;
+    ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Nessun risultato</div>`;
   }
 }
 
@@ -101,25 +96,25 @@ function _ensureYTFolder() {
   ytTracksEl = document.createElement('div');
   ytTracksEl.className = 'folder-tracks';
 
-  header.addEventListener('click', () => {
-    ytTracksEl.hidden = !ytTracksEl.hidden;
-  });
-
+  header.addEventListener('click', () => { ytTracksEl.hidden = !ytTracksEl.hidden; });
   ytGroup.append(header, ytTracksEl);
   library.prepend(ytGroup);
 }
 
 function _renderResults(results) {
   ytTracksEl.innerHTML = '';
-  results.forEach((video) => {
-    ytTracksEl.appendChild(makeYTTrackEl(video));
+  results.forEach((video, i) => {
+    const el = makeYTTrackEl(video);
+    el.dataset.ytIdx = i; // Per highlight
+    ytTracksEl.appendChild(el);
   });
 }
 
 function _highlight(videoId) {
   if (!ytTracksEl) return;
   ytTracksEl.querySelectorAll('.track-item').forEach(el => {
-    const match = el.dataset.ytId === videoId;
+    const idx = parseInt(el.dataset.ytIdx);
+    const match = store.ytResults[idx]?.id === videoId;
     el.style.borderLeft = match ? '5px solid var(--accent)' : '';
     el.style.background = match ? '#252525' : '';
   });
