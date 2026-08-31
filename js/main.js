@@ -1,26 +1,20 @@
-/**
- * js/main.js
- * Entry point dell'applicazione Grugofy
- */
-
 import { store } from './core/store.js';
 import { loadState } from './core/persist.js';
 import { renderQueue, renderPlaylists } from './ui/queueUI.js';
 import { showImporterModal, initImporterUI } from './modules/importer.js';
+import { renderLocalTrackList } from './modules/localFiles.js';
 import { scheduleYTSearch } from './modules/youtube.js';
-import { saveQueueAsPlaylist, saveHistoryAsPlaylist, exportAllPlaylists, clearQueue } from './core/queue.js';
+import './ui/controls.js'; // Inizializza i controlli
 import { setupExpandedSwipe } from './ui/expandedPlayer.js';
-import './ui/controls.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Inizializza i moduli UI
   initImporterUI();
-  setupExpandedSwipe();
   loadState();
   renderQueue();
   renderPlaylists();
+  setupExpandedSwipe();
 
-  // 2. Menu Dropdown per il Pulsante "+" (File o YouTube)
+  // 1. Menu Dropdown per il Pulsante "+" (File o YouTube)
   const btnUploadMenu = document.getElementById('btnUploadMenu');
   const uploadMenu     = document.getElementById('uploadMenu');
   const menuOptionFile = document.getElementById('menuOptionFile');
@@ -37,87 +31,69 @@ document.addEventListener('DOMContentLoaded', () => {
       uploadMenu.classList.add('hidden');
     });
 
-    if (menuOptionFile) {
-      menuOptionFile.onclick = () => {
-        uploadMenu.classList.add('hidden');
-        folderInput?.click();
-      };
-    }
+    menuOptionFile.onclick = () => {
+      uploadMenu.classList.add('hidden');
+      folderInput?.click();
+    };
 
-    if (menuOptionYT) {
-      menuOptionYT.onclick = () => {
-        uploadMenu.classList.add('hidden');
-        showImporterModal();
-      };
-    }
+    menuOptionYT.onclick = () => {
+      uploadMenu.classList.add('hidden');
+      showImporterModal();
+    };
   }
 
-  // 3. Caricamento File Locali
+  // 2. Lettura dei file locali (Logica mancante)
   if (folderInput) {
-    folderInput.onchange = (e) => {
-      const files = Array.from(e.target.files || []);
+    folderInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files).filter(f => f.type.startsWith('audio/') || f.type.startsWith('video/'));
       if (!files.length) return;
       
-      store.playlist = files.map(file => ({
-        file,
-        folder: file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : 'Locali',
-        cover: null
-      }));
-
-      import('./modules/localFiles.js').then(m => {
-        m.renderLocalTrackList(document.getElementById('libraryList'));
+      files.forEach(file => {
+        store.playlist.push({
+          file: file,
+          folder: file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : 'Sconosciuto',
+          cover: null,
+          path: file.webkitRelativePath || file.name
+        });
       });
-    };
+      
+      renderLocalTrackList(document.getElementById('library'));
+      e.target.value = ''; // Resetta l'input
+    });
   }
 
-  // 4. Gestione Pulsanti Azioni Coda e Playlist
-  document.getElementById('saveQueueBtn')?.addEventListener('click', () => {
-    const name = prompt('Nome della playlist:');
-    if (name) saveQueueAsPlaylist(name);
-  });
-
-  document.getElementById('clearQueueBtn')?.addEventListener('click', () => {
-    clearQueue();
-  });
-
-  document.getElementById('saveHistoryBtn')?.addEventListener('click', () => {
-    const name = prompt('Nome playlist per Cronologia:', 'Cronologia ' + new Date().toLocaleDateString());
-    if (name) saveHistoryAsPlaylist(name);
-  });
-
-  document.getElementById('exportPlaylistsBtn')?.addEventListener('click', () => {
-    exportAllPlaylists();
-  });
-
-  // 5. Ricerca Unificata
-  const searchInput = document.getElementById('searchInput');
-  const clearSearchBtn = document.getElementById('clearSearchBtn');
-
-  if (searchInput) {
-    searchInput.oninput = (e) => {
-      const q = e.target.value.trim();
-      if (clearSearchBtn) clearSearchBtn.classList.toggle('active', q.length > 0);
-      scheduleYTSearch(q);
-    };
-  }
-
-  if (clearSearchBtn) {
-    clearSearchBtn.onclick = () => {
-      if (searchInput) {
-        searchInput.value = '';
-        scheduleYTSearch('');
-      }
-      clearSearchBtn.classList.remove('active');
-    };
-  }
-
-  // 6. Desktop Media Player Toggle
+  // 3. Desktop Media Player Toggle
   const nowPlayingTitle = document.getElementById('nowPlayingTitle');
   const expandedPlayer  = document.getElementById('expandedPlayer');
 
   if (nowPlayingTitle && expandedPlayer) {
     nowPlayingTitle.addEventListener('click', () => {
       expandedPlayer.classList.toggle('open');
+    });
+  }
+
+  // 4. Ricerca (Locale e YT)
+  const searchInput = document.getElementById('searchInput');
+  const clearBtn = document.getElementById('clearSearchBtn');
+  
+  if (searchInput && clearBtn) {
+    searchInput.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      clearBtn.classList.toggle('active', q.length > 0);
+      
+      // Filtra tracce locali
+      document.querySelectorAll('#library .track-item:not([data-yt-idx])').forEach(el => {
+        const title = el.querySelector('.track-title')?.innerText.toLowerCase() || '';
+        el.style.display = title.includes(q) ? 'flex' : 'none';
+      });
+
+      // Cerca su YouTube
+      scheduleYTSearch(q);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input'));
     });
   }
 });
