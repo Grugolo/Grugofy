@@ -1,5 +1,5 @@
 /**
- * js/modules/ytUI.js (Estratto per integrazione Desktop)
+ * js/modules/ytUI.js
  */
 
 import { enqueue } from '../core/queue.js';
@@ -34,10 +34,11 @@ function createDesktopActions(trackObj) {
 export function makeYTTrackEl(item) {
   const el = document.createElement('div');
   el.className = 'track-item';
+  el.dataset.ytId = item.id;
 
   const cover = document.createElement('img');
   cover.className = 'track-cover';
-  cover.src = item.thumbnail || '';
+  cover.src = item.thumb || item.thumbnail || 'https://placehold.co/90x90';
   cover.alt = 'Cover';
 
   const info = document.createElement('div');
@@ -49,12 +50,10 @@ export function makeYTTrackEl(item) {
 
   info.append(title);
 
-  // Pulsanti per Desktop (↑ / ↓)
-  const trackObj = { yt: true, id: item.id, title: item.title, duration: item.duration || 0 };
+  const trackObj = { type: 'youtube', yt: true, id: item.id, title: item.title, duration: item.duration || 0, thumb: item.thumb };
   const actionsEl = createDesktopActions(trackObj);
 
   el.append(cover, info, actionsEl);
-
   el.onclick = () => playYT(trackObj);
 
   return el;
