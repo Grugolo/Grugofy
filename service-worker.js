@@ -1,10 +1,10 @@
 const CACHE = "grugofy-v1";
 
 const FILES = [
-  "/Jukebox/",
-  "/Jukebox",
-  "/Jukebox/style.css",
-  "/Jukebox/js/main.js"
+  "/Grugofy/",
+  "/Grugofy",
+  "/Grugofy/style.css",
+  "/Grugofy/js/main.js"
 ];
 
 self.addEventListener("install", event => {
