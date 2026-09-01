@@ -5,46 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Grugofy</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
 <header>
-  <!-- Fixed Dropdown Upload Menu Structure -->
-  <div style="position: relative;">
-    <button class="btn-upload" id="btnUploadMenu" title="Aggiungi file o link">+</button>
-    <div id="uploadMenu" class="dropdown-menu hidden">
-      <button id="menuOptionFile">📁 Carica Cartella/File</button>
-      <button id="menuOptionYTLink">🌐 Importa da YouTube</button>
-    </div>
-  </div>
-  <input id="folderInput" type="file" webkitdirectory multiple accept="audio/*,video/*" class="hidden">
-
+  <button id="btnOpenImport" class="btn-upload" aria-label="Aggiungi">+</button>
   <div class="search-wrapper">
-    <input type="text" id="searchInput" placeholder="Cerca brano (Locale o YT)…" autocomplete="off">
+    <input type="text" id="searchInput" placeholder="Cerca brano…" autocomplete="off">
     <button id="clearSearchBtn">✕</button>
   </div>
 </header>
 
 <main id="mainContent">
+
   <section id="queueSection" hidden>
     <div class="section-header">
-      <span class="section-title">In Coda</span>
-      <button id="saveQueueBtn" class="pill-btn">SALVA CODA</button>
+      <span class="section-title" id="queueSectionTitle" style="cursor:pointer;user-select:none;">CODA</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="clearQueueBtn"  class="pill-btn pill-btn--danger" aria-label="Svuota coda">✕</button>
+        <button id="saveQueueBtn"   class="pill-btn">SALVA CODA</button>
+      </div>
     </div>
-    <div id="queueList"></div>
+    <div id="queueList" data-collapsible-body></div>
   </section>
 
   <section id="playlistSection">
     <div class="section-header">
-      <span class="section-title">Playlist Salvate</span>
-      <button id="saveHistoryBtn" class="pill-btn">SALVA CRONOLOGIA</button>
+      <span class="section-title" style="cursor:pointer;user-select:none;">PLAYLIST SALVATE</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="exportAllPlaylistsBtn" class="pill-btn pill-btn--blue" aria-label="Scarica tutte le playlist">
+          <!-- Freccia grossa azzurra -->
+          <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" style="vertical-align:middle;">
+            <path fill="#4fc3f7" d="M10 13L4 7h4V2h4v5h4l-6 6z"/>
+            <rect fill="#4fc3f7" x="3" y="15" width="14" height="2" rx="1"/>
+          </svg>
+        </button>
+        <button id="saveHistoryBtn" class="pill-btn">SALVA CRONOLOGIA</button>
+      </div>
     </div>
-    <div id="playlistList"></div>
+    <div id="playlistList" data-collapsible-body></div>
   </section>
 
-  <span class="section-title">Libreria</span>
+  <span class="section-title" id="libraryTitle" style="cursor:pointer;user-select:none;">LIBRERIA</span>
   <div id="library"></div>
+
 </main>
 
 <!-- Player bar fissa -->
@@ -74,6 +81,36 @@
   <div id="visualContainer"></div>
   <div id="ytWrapper">
     <div id="ytPlayerEl"></div>
+    <div id="lyricsLine" class="hidden"></div>
+    <div id="ytResizeHandle" aria-label="Ridimensiona player YouTube"></div>
+  </div>
+</div>
+
+<!-- Input file nascosto, riusato dalla modale import -->
+<input id="folderInput" type="file" multiple accept="audio/*,video/*,.txt,text/plain" class="hidden">
+
+<!-- Modale Import -->
+<div id="importModal" class="modal hidden">
+  <div class="modal-backdrop" id="importModalBackdrop"></div>
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span>Aggiungi musica</span>
+      <button id="importModalClose" aria-label="Chiudi">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <button id="importChooseFilesBtn" class="modal-option">
+        📁 File o cartelle dal dispositivo
+        <small>Audio, video, o playlist .txt</small>
+      </button>
+
+      <div class="modal-divider">oppure</div>
+
+      <label class="modal-label" for="importYtUrl">Link YouTube (video o playlist)</label>
+      <input id="importYtUrl" type="text" placeholder="https://www.youtube.com/watch?v=… oppure …&list=…" autocomplete="off">
+      <button id="importYtSubmitBtn" class="modal-option modal-option--accent">Importa da YouTube</button>
+      <div id="importYtStatus" class="modal-status"></div>
+    </div>
   </div>
 </div>
 
