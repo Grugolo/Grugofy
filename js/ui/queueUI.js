@@ -1,108 +1,139 @@
-import { parseYouTubeUrl, fetchPlaylistTracks, fetchVideoDetails } from '../services/ytService.js';
-import { loadPlaylists, savePlaylists } from '../core/queue.js';
-import { renderPlaylists } from '../ui/queueUI.js';
-import { showToast } from '../utils.js'; // Fixed path
+// ── queueUI.js ───────────────────────────────────────────────────
+// Rendering DOM di coda e playlist salvate.
 
-let modalEl = null;
+import { store }       from '../core/store.js';
+import { escHtml }     from '../utils.js';
+import {
+  removeFromQueue, reorderQueue, clearQueue,
+  loadPlaylists,
+  saveQueueAsPlaylist,
+  saveHistoryAsPlaylist,
+  loadPlaylistIntoQueue,
+  deletePlaylist,
+  exportAllPlaylists,
+} from '../core/queue.js';
 
-export function initImporterUI() {
-  if (document.getElementById('ytLinkModal')) return;
+/* ── DOM refs ───────────────────────────────────────────────────── */
+const queueListEl    = document.getElementById('queueList');
+const playlistListEl = document.getElementById('playlistList');
+const queueSection   = document.getElementById('queueSection');
 
-  const modalHtml = `
-    <div id="ytLinkModal" class="modal-overlay hidden">
-      <div class="modal-content">
-        <h3>Importa da YouTube</h3>
-        
-        <label class="modal-label">Chiave API Google (opzionale per link singoli):</label>
-        <input type="password" id="ytApiKeyInput" placeholder="Incolla API Key Google Data v3..." class="modal-input" style="margin-bottom:12px;">
+/* ═══════════════════════════════════════════════════════════════════
+   CODA
+   ═══════════════════════════════════════════════════════════════════ */
 
-        <label class="modal-label">Nome Playlist di destinazione:</label>
-        <input type="text" id="ytLinkPlaylistName" placeholder="Es. My YT Hits" class="modal-input">
-        
-        <label class="modal-label">Incolla URL Video o Playlist YouTube (uno per riga):</label>
-        <textarea id="ytLinkInput" class="modal-textarea" placeholder="https://www.youtube.com/watch?v=..."></textarea>
-        
-        <div class="modal-actions">
-          <button id="btnCancelYTLink" class="pill-btn pill-btn--danger">Annulla</button>
-          <button id="btnProcessYTLink" class="pill-btn">Converti e Salva</button>
-        </div>
-      </div>
-    </div>
-  `;
+export function renderQueue() {
+  queueListEl.innerHTML = '';
+  queueSection.hidden   = store.queue.length === 0;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-  modalEl = document.getElementById('ytLinkModal');
+  store.queue.forEach((item, i) => {
+    const div   = document.createElement('div');
+    const title = item.type === 'youtube' ? item.title : item.file.name;
 
-  document.getElementById('btnCancelYTLink').onclick = hideImporterModal;
-  document.getElementById('btnProcessYTLink').onclick = processImport;
+    div.dataset.dragItem = i;
+    div.innerHTML = `
+      <span style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.85rem;">
+        ${escHtml(title)}
+      </span>
+      <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
+        <button data-rem="${i}" aria-label="Rimuovi">${_iconX()}</button>
+        <span class="drag-handle" data-drag="${i}" aria-label="Trascina per riordinare">☰</span>
+      </div>`;
+
+    div.querySelector('[data-rem]').onclick = () => removeFromQueue(i);
+    queueListEl.appendChild(div);
+  });
 }
 
-export function showImporterModal() {
-  if (!modalEl) initImporterUI();
-  document.getElementById('ytLinkPlaylistName').value = 'Playlist YT ' + new Date().toLocaleDateString();
-  document.getElementById('ytLinkInput').value = '';
-  modalEl.classList.remove('hidden');
+/* ── Drag & drop touch ──────────────────────────────────────────── */
+let _dragIdx = null;
+
+queueListEl.addEventListener('touchstart', e => {
+  const handle = e.target.closest('[data-drag]');
+  if (!handle) return;
+  _dragIdx = parseInt(handle.dataset.drag);
+  e.stopPropagation();
+}, { passive: false });
+
+queueListEl.addEventListener('touchmove', e => {
+  if (_dragIdx === null) return;
+  e.preventDefault();
+  const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY)
+               ?.closest('[data-drag-item]');
+  if (!el) return;
+  const overIdx = parseInt(el.dataset.dragItem);
+  if (overIdx !== _dragIdx) {
+    reorderQueue(_dragIdx, overIdx);
+    _dragIdx = overIdx;
+  }
+}, { passive: false });
+
+queueListEl.addEventListener('touchend', () => { _dragIdx = null; });
+
+/* ═══════════════════════════════════════════════════════════════════
+   SALVA CODA / CRONOLOGIA
+   ═══════════════════════════════════════════════════════════════════ */
+
+document.getElementById('saveQueueBtn').onclick = () => {
+  const name = prompt('Nome Playlist:', 'Playlist ' + new Date().toLocaleDateString());
+  if (name) saveQueueAsPlaylist(name);
+};
+
+document.getElementById('saveHistoryBtn').onclick = () => {
+  const start = store.sessionStart || new Date();
+  const now   = new Date();
+  const _fmt  = d => `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const date  = `${start.getDate()}/${start.getMonth()+1}/${String(start.getFullYear()).slice(-2)}`;
+  const name  = prompt('Nome playlist:', `${date} ${_fmt(start)} - ${_fmt(now)}`);
+  if (name) saveHistoryAsPlaylist(name);
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   AZIONI AZZERAMENTO CODA ED ESPORTAZIONE
+   ═══════════════════════════════════════════════════════════════════ */
+
+document.getElementById('clearQueueBtn').onclick = () => {
+  if (!store.queue.length) return;
+  if (confirm('Vuoi davvero svuotare la coda?')) {
+    clearQueue();
+  }
+};
+
+document.getElementById('exportAllPlaylistsBtn').onclick = () => {
+  exportAllPlaylists();
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   PLAYLIST SALVATE
+   ═══════════════════════════════════════════════════════════════════ */
+
+export function renderPlaylists() {
+  playlistListEl.innerHTML = '';
+  const all = loadPlaylists();
+
+  Object.keys(all).forEach(name => {
+    const div = document.createElement('div');
+    div.innerHTML = `
+      <span style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.85rem;">
+        ${escHtml(name)}
+      </span>
+      <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
+        <button data-del aria-label="Elimina">${_iconX()}</button>
+        <button data-load style="color:var(--accent);font-weight:700;font-size:.7rem;">CARICA</button>
+      </div>`;
+
+    div.querySelector('[data-load]').onclick = () => loadPlaylistIntoQueue(name);
+    div.querySelector('[data-del]').onclick  = () => {
+      if (confirm(`Eliminare "${name}"?`)) deletePlaylist(name);
+    };
+    playlistListEl.appendChild(div);
+  });
 }
 
-export function hideImporterModal() {
-  if (modalEl) modalEl.classList.add('hidden');
-}
-
-async function processImport() {
-  const apiKey = document.getElementById('ytApiKeyInput').value.trim();
-  const name = document.getElementById('ytLinkPlaylistName').value.trim();
-  const rawText = document.getElementById('ytLinkInput').value.trim();
-
-  if (!name || !rawText) {
-    showToast('Inserisci un nome ed almeno un link YouTube.');
-    return;
-  }
-
-  if (apiKey) {
-    const { setApiKey } = await import('../services/ytService.js');
-    setApiKey(apiKey);
-  }
-
-  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-  let accumulatedTracks = [];
-
-  showToast('Elaborazione link in corso...');
-
-  try {
-    const singleVideoIds = [];
-
-    for (const line of lines) {
-      const parsed = parseYouTubeUrl(line);
-      if (parsed) {
-        if (parsed.type === 'playlist') {
-          const playlistTracks = await fetchPlaylistTracks(parsed.id);
-          accumulatedTracks.push(...playlistTracks);
-        } else if (parsed.type === 'video') {
-          singleVideoIds.push(parsed.id);
-        }
-      }
-    }
-
-    if (singleVideoIds.length > 0) {
-      const videoTracks = await fetchVideoDetails(singleVideoIds);
-      accumulatedTracks.push(...videoTracks);
-    }
-
-    if (accumulatedTracks.length === 0) {
-      showToast('Nessun link o playlist YouTube validi individuati.');
-      return;
-    }
-
-    const playlists = loadPlaylists();
-    playlists[name] = accumulatedTracks;
-    savePlaylists(playlists);
-
-    renderPlaylists();
-    hideImporterModal();
-    showToast(`Playlist "${name}" creata con ${accumulatedTracks.length} brani!`);
-
-  } catch (err) {
-    console.error(err);
-    showToast(`Errore durante l'importazione: ${err.message}`);
-  }
+/* ── Icona X SVG ────────────────────────────────────────────────── */
+function _iconX() {
+  return `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+    <line x1="2" y1="2" x2="14" y2="14" stroke="#ff4444" stroke-width="2" stroke-linecap="round"/>
+    <line x1="14" y1="2" x2="2"  y2="14" stroke="#ff4444" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
 }

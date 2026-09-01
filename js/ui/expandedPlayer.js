@@ -1,25 +1,33 @@
 // ── expandedPlayer.js ────────────────────────────────────────────
 // Player espanso: vista visuale, swipe gestures, long-press 2x speed.
-// Il poll seekbar YT e gestito direttamente in player.js.
+// Il poll seekbar YT è gestito direttamente in player.js.
 
 import { store }                 from '../core/store.js';
 import { on, EV }                from '../core/events.js';
 import { mediaEl }               from '../core/player.js';
-import { formatTime, showToast } from '../utils.js';
+import { showToast }             from '../utils.js';
 
 /* ── DOM refs ───────────────────────────────────────────────────── */
-const expandedEl  = document.getElementById('expandedPlayer');
-const visualEl    = document.getElementById('visualContainer');
-const ytWrapperEl = document.getElementById('ytWrapper');
+const expandedEl    = document.getElementById('expandedPlayer');
+const visualEl      = document.getElementById('visualContainer');
+const ytWrapperEl   = document.getElementById('ytWrapper');
+const ytResizeHandle = document.getElementById('ytResizeHandle');
+
+const YT_HEIGHT_KEY = 'yt_player_height_pct';
 
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
 on(EV.VISUAL_UPDATE, () => updateVisual());
-// YT_PLAYING / YT_STOPPED ora gestiti in player.js (startYTSeekPoll / stopYTSeekPoll)
+// YT_PLAYING / YT_STOPPED gestiti in player.js (startYTSeekPoll / stopYTSeekPoll)
 
 /* ── Apri / chiudi ──────────────────────────────────────────────── */
+// `open` non specificato → toggle reale in base allo stato corrente.
+// `open` true/false → forza apertura/chiusura (usato da swipe verticale).
 export function togglePlayer(open) {
   const hasContent = store.currentYTId || store.currentIdx !== -1;
-  if (open && hasContent) {
+  const isOpen     = expandedEl.classList.contains('open');
+  const shouldOpen = (open === undefined) ? !isOpen : open;
+
+  if (shouldOpen && hasContent) {
     updateVisual();
     expandedEl.classList.add('open');
   } else {
@@ -34,11 +42,14 @@ export function updateVisual() {
     visualEl.innerHTML = '';
     mediaEl.style.display = 'none';
     ytWrapperEl.classList.add('active');
+    ytWrapperEl.classList.add('resizable');
+    _applyStoredYTHeight();
     return;
   }
 
   // Locale: nascondi ytWrapper
   ytWrapperEl.classList.remove('active');
+  ytWrapperEl.classList.remove('resizable');
   visualEl.innerHTML = '';
 
   const idx = store.currentIdx;
@@ -66,6 +77,7 @@ export function updateVisual() {
 export function setupExpandedSwipe() {
   _setupSwipeNavigation();
   _setupVisualGestures();
+  _setupYTResize();
 }
 
 /* ── Swipe verticale chiudi; orizzontale prev/next ──────────────── */
@@ -74,11 +86,13 @@ function _setupSwipeNavigation() {
   const THRESHOLD = 60;
 
   expandedEl.addEventListener('touchstart', e => {
+    if (e.target.closest('#ytResizeHandle')) return; // non intercettare il resize
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
   }, { passive: true });
 
   expandedEl.addEventListener('touchend', e => {
+    if (e.target.closest('#ytResizeHandle')) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
 
@@ -140,4 +154,51 @@ function _setupVisualGestures() {
       }, TAP_DELAY);
     }
   });
+}
+
+/* ── Ridimensionamento player YouTube (desktop + touch) ──────────
+   Trascinando l'handle si cambia l'altezza di #ytWrapper espressa
+   in percentuale dell'altezza disponibile in #expandedPlayer.
+   La percentuale scelta viene salvata e riapplicata alle sessioni
+   successive.                                                    */
+function _setupYTResize() {
+  let dragging   = false;
+  let startY     = 0;
+  let startPct   = 50;
+
+  const MIN_PCT = 25;
+  const MAX_PCT = 100;
+
+  ytResizeHandle.addEventListener('pointerdown', e => {
+    dragging = true;
+    startY   = e.clientY;
+    startPct = _getStoredYTHeight();
+    ytResizeHandle.setPointerCapture(e.pointerId);
+  });
+
+  ytResizeHandle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const containerH = expandedEl.offsetHeight || 1;
+    const deltaPct   = ((e.clientY - startY) / containerH) * 100;
+    const newPct     = Math.min(MAX_PCT, Math.max(MIN_PCT, startPct + deltaPct));
+    _setYTHeight(newPct);
+  });
+
+  const _endDrag = () => { dragging = false; };
+  ytResizeHandle.addEventListener('pointerup', _endDrag);
+  ytResizeHandle.addEventListener('pointercancel', _endDrag);
+}
+
+function _getStoredYTHeight() {
+  const v = parseFloat(localStorage.getItem(YT_HEIGHT_KEY));
+  return isFinite(v) ? v : 100; // default: schermo intero, come comportamento originale
+}
+
+function _setYTHeight(pct) {
+  localStorage.setItem(YT_HEIGHT_KEY, String(pct));
+  ytWrapperEl.style.setProperty('--yt-height', `${pct}%`);
+}
+
+function _applyStoredYTHeight() {
+  ytWrapperEl.style.setProperty('--yt-height', `${_getStoredYTHeight()}%`);
 }

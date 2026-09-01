@@ -1,9 +1,9 @@
 // ── controls.js ──────────────────────────────────────────────────
 // Player bar UI: icone SVG, event listener pulsanti, updateUI.
 
-import { store }                                                    from '../core/store.js';
-import { on, EV }                                                   from '../core/events.js';
-import { mediaEl, togglePlay, playNext, playPrev, seek }            from '../core/player.js';
+import { store }                                         from '../core/store.js';
+import { on, EV }                                        from '../core/events.js';
+import { mediaEl, togglePlay, playNext, playPrev, seek } from '../core/player.js';
 
 /* ── SVG Icons ──────────────────────────────────────────────────── */
 const ICONS = {
@@ -16,11 +16,14 @@ const ICONS = {
       stroke-linecap="round" stroke-linejoin="round"
       d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/>
   </svg>`,
-  shuffle: (active) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-    <path fill="none" stroke="${active ? '#1db954' : '#888'}" stroke-width="2"
+  shuffle: (mode) => {
+    const color = mode === 2 ? '#ff5555' : mode === 1 ? '#1db954' : '#888';
+    return `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    <path fill="none" stroke="${color}" stroke-width="2"
       stroke-linecap="round" stroke-linejoin="round"
       d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>
-  </svg>`,
+  </svg>`;
+  },
 };
 
 /* ── DOM refs ───────────────────────────────────────────────────── */
@@ -43,8 +46,13 @@ btnLoop.onclick = () => {
 };
 
 btnShuffle.onclick = () => {
-  store.shuffle = !store.shuffle;
-  if (store.shuffle) _buildShuffleOrder();
+  // Ciclo a 3 stadi: 0 spento → 1 shuffle libreria → 2 shuffle libreria+coda → 0
+  store.shuffleMode = (store.shuffleMode + 1) % 3;
+
+  // Nuovo ordine casuale generato da capo ogni volta che si preme il
+  // pulsante (sia entrando in stadio 1 che in stadio 2), come richiesto.
+  if (store.shuffleMode > 0) _buildShuffleOrder();
+
   if (navigator.vibrate) navigator.vibrate(30);
   updateUI();
 };
@@ -65,7 +73,9 @@ setInterval(() => {
 }, 500);
 
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
-on(EV.PLAYER_CHANGE, () => updateUI());
+// FIX: prima c'erano due listener separati su PLAYER_CHANGE che
+// facevano entrambi updateUI() con parametri diversi (doppio render,
+// possibile race sull'ultimo valore applicato). Un solo listener basta.
 on(EV.PLAYER_CHANGE, ({ playing } = {}) => updateUI(playing));
 
 /* ── updateUI ───────────────────────────────────────────────────── */
@@ -78,7 +88,7 @@ export function updateUI(playingOverride) {
   btnNext.innerHTML    = ICONS.next;
   btnPrev.innerHTML    = ICONS.prev;
   btnLoop.innerHTML    = ICONS.loop(store.looping);
-  btnShuffle.innerHTML = ICONS.shuffle(store.shuffle);
+  btnShuffle.innerHTML = ICONS.shuffle(store.shuffleMode);
 
   // Highlight traccia corrente in libreria
   document.querySelectorAll('#library .track-item').forEach(el => {
