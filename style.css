@@ -259,6 +259,25 @@ header {
 .track-info    { flex: 1; min-width: 0; cursor: pointer; }
 .track-name    { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9rem; font-weight: 700; }
 
+/* Bottone "+" aggiungi in coda (desktop-friendly, oltre allo swipe touch) */
+.track-add-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.track-add-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .track-meta-row {
   display: flex; align-items: center; gap: 6px;
   font-size: .7rem; color: var(--text-dim); margin-top: 2px;
@@ -364,7 +383,10 @@ header {
 /* ── YT wrapper inside expanded ────────────────────────────────── */
 #ytWrapper {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0; /* default: schermo intero, sovrascritto in modalità .resizable */
   opacity: 0;
   pointer-events: none;
   transition: opacity .2s ease;
@@ -411,13 +433,37 @@ header {
   100% { background-position: -200% 0; }
 }
 
-/* ── Drag handle ───────────────────────────────────────────────── */
+/* ── Drag handle (touch) ───────────────────────────────────────── */
 .drag-handle {
   cursor: grab;
   padding-right: 10px;
   font-size: 18px;
   touch-action: none;
   color: var(--text-dim);
+}
+
+/* Nascosto su desktop: le frecce su/giù coprono il riordino lì */
+@media (hover: hover) and (pointer: fine) {
+  .drag-handle { display: none; }
+}
+
+/* ── Bottoni riordino coda (frecce su/giù) ────────────────────────
+   Alternativa desktop-friendly al drag touch: click diretto, nessuna
+   gesture richiesta, funziona identico con mouse o touch.        */
+.queue-item button[data-up],
+.queue-item button[data-down] {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.queue-item button[data-up]:disabled,
+.queue-item button[data-down]:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
 
 /* ── SVG icons (inline) ────────────────────────────────────────── */
@@ -573,6 +619,8 @@ body.dragging-files::after {
   color: var(--text);
   font-family: inherit;
   font-size: 0.9rem;
+  resize: vertical;
+  min-height: 4.5em;
 }
 
 .modal-status {
@@ -587,6 +635,7 @@ body.dragging-files::after {
    in modalità "resizable" è controllata da --yt-height (0-100%),
    impostata via drag sull'handle e persistita in localStorage.    */
 #ytWrapper.resizable {
+  bottom: auto; /* libera lo spazio sotto: l'altezza è dettata da --yt-height */
   height: var(--yt-height, 100%);
 }
 
