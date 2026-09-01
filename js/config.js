@@ -1,3 +1,8 @@
 // ── config.js ────────────────────────────────────────────────────
-export const YT_API_KEY = 'AIzaSyBwZsEchAW5KOytpVE6lqRQaXYdOrsbYT0';
-
+// Sostituisci con le tue chiavi da Google Cloud Console (YouTube Data API v3).
+// Puoi metterne più di una: verranno provate in sequenza se una finisce la quota.
+export const YT_API_KEY = [
+  'yyy',
+  'xxx',
+  'zzz',
+];

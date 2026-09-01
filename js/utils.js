@@ -13,6 +13,7 @@ export function escHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/'/g, '&#39;')
     .replace(/"/g, '&quot;');
 }
 
@@ -54,3 +55,18 @@ export function parseISO8601(str) {
        +  parseInt(m[3] || 0);
 }
 
+/**
+ * Data → "'aa/m/g"  (es. 5 marzo 2024 → '24/3/5)
+ * Accetta Date, stringa ISO o null.
+ * FIX: usava variabili `m`/`g` mai definite (ReferenceError) —
+ * ora usa correttamente `mm`/`gg`.
+ */
+export function fmtDateShort(d) {
+  if (!d) return '';
+  const dt = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(dt)) return '';
+  const yy = String(dt.getFullYear()).slice(-2);
+  const mm = dt.getMonth() + 1;
+  const gg = dt.getDate();
+  return `'${yy}/${mm}/${gg}`;
+}

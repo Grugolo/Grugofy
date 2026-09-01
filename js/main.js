@@ -1,99 +1,151 @@
-import { store } from './core/store.js';
-import { loadState } from './core/persist.js';
-import { renderQueue, renderPlaylists } from './ui/queueUI.js';
-import { showImporterModal, initImporterUI } from './modules/importer.js';
-import { renderLocalTrackList } from './modules/localFiles.js';
-import { scheduleYTSearch } from './modules/youtube.js';
-import './ui/controls.js'; // Inizializza i controlli
-import { setupExpandedSwipe } from './ui/expandedPlayer.js';
+// ── main.js ──────────────────────────────────────────────────────
+// Entry point. Qui avviene il "wiring" tra i moduli core che non
+// si importano più a vicenda direttamente (player.js <-> queue.js),
+// per evitare dipendenze circolari.
 
-document.addEventListener('DOMContentLoaded', () => {
-  initImporterUI();
-  loadState();
+import './modules/localFiles.js';
+import './ui/controls.js';
+import './ui/importModal.js';
+import './modules/lyrics.js';
+
+import { updateUI }                          from './ui/controls.js';
+import { renderPlaylists, renderQueue }      from './ui/queueUI.js';
+import { setupExpandedSwipe, togglePlayer }  from './ui/expandedPlayer.js';
+import { scheduleYTSearch }                  from './modules/youtube.js';
+import { loadState }                         from './core/persist.js';
+import { playLocal, playYT, wireQueue }      from './core/player.js';
+import { dequeueNext, wirePlayback, wireQueueUI } from './core/queue.js';
+import { store }                             from './core/store.js';
+
+/* ── Wiring esplicito (rompe i cicli player.js <-> queue.js) ────── */
+wireQueue({ dequeueNext });
+wirePlayback({ playLocal, playYT });
+wireQueueUI({ refreshQueue: renderQueue, refreshPlaylists: renderPlaylists });
+
+/* ── Barra di ricerca ───────────────────────────────────────────── */
+const searchInput = document.getElementById('searchInput');
+const clearBtn    = document.getElementById('clearSearchBtn');
+
+searchInput.addEventListener('input', e => {
+  const val = e.target.value.toLowerCase();
+
+  clearBtn.classList.toggle('active', val.length > 0);
+
+  document.querySelectorAll('.folder-group:not([data-yt-group])').forEach(group => {
+    let visible = false;
+
+    group.querySelectorAll('.track-item').forEach(item => {
+      const text  = item.querySelector('.track-name')?.textContent || '';
+      const match = text.toLowerCase().includes(val);
+      item.style.display = match ? 'flex' : 'none';
+      if (match) visible = true;
+    });
+
+    group.style.display = visible ? '' : 'none';
+  });
+
+  scheduleYTSearch(val);
+});
+
+clearBtn.onclick = () => {
+  searchInput.value = '';
+  searchInput.dispatchEvent(new Event('input'));
+  searchInput.focus();
+};
+
+/* ── Now-playing title: click → espandi; swipe → prev/next ─────── */
+const titleEl = document.getElementById('nowPlayingTitle');
+titleEl.addEventListener('click', () => togglePlayer()); // toggle reale apri/chiudi
+
+let _sx = 0, _sy = 0;
+titleEl.addEventListener('touchstart', e => {
+  _sx = e.touches[0].clientX;
+  _sy = e.touches[0].clientY;
+}, { passive: true });
+
+titleEl.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - _sx;
+  const dy = e.changedTouches[0].clientY - _sy;
+  const T  = 50;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx < -T) document.getElementById('btnNext').click();
+    if (dx >  T) document.getElementById('btnPrev').click();
+  } else {
+    if (dy < -T) togglePlayer(true);
+    if (dy >  T) togglePlayer(false);
+  }
+}, { passive: true });
+
+/* ── Registra Service Worker ─────────────────────────────────────── */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('./service-worker.js');
+      console.log('Service Worker registered:', registration.scope);
+    } catch (err) {
+      console.error('Service Worker registration failed:', err);
+    }
+  });
+}
+
+/* ── Collassabilità sezioni (coda, playlist, libreria) ──────────── */
+// Deleghiamo i click sugli header di sezione presenti nell'HTML statico.
+// Per la libreria, ogni folder-group ha già il suo handler in localFiles.js.
+// Qui gestiamo le sezioni fisse: queueSection e playlistSection.
+window.addEventListener('load', () => {
+  const mainContent = document.getElementById('mainContent');
+
+  mainContent.addEventListener('click', (e) => {
+    const titleEl = e.target.closest('.section-title');
+    if (!titleEl) return;
+
+    const section = titleEl.closest('section') || mainContent;
+    const body = section.querySelector('[data-collapsible-body]') || titleEl.nextElementSibling;
+
+    if (body) {
+      const isCollapsed = body.style.display === 'none';
+      body.style.display = isCollapsed ? '' : 'none';
+      titleEl.dataset.collapsed = !isCollapsed ? '1' : '0';
+    }
+  });
+
+  updateUI();
   renderQueue();
   renderPlaylists();
   setupExpandedSwipe();
 
-  // 1. Menu Dropdown per il Pulsante "+" (File o YouTube)
-  const btnUploadMenu = document.getElementById('btnUploadMenu');
-  const uploadMenu     = document.getElementById('uploadMenu');
-  const menuOptionFile = document.getElementById('menuOptionFile');
-  const menuOptionYT   = document.getElementById('menuOptionYTLink');
-  const folderInput    = document.getElementById('folderInput');
+  const state = loadState();
 
-  if (btnUploadMenu && uploadMenu) {
-    btnUploadMenu.onclick = (e) => {
-      e.stopPropagation();
-      uploadMenu.classList.toggle('hidden');
-    };
-
-    document.addEventListener('click', () => {
-      uploadMenu.classList.add('hidden');
-    });
-
-    menuOptionFile.onclick = () => {
-      uploadMenu.classList.add('hidden');
-      folderInput?.click();
-    };
-
-    menuOptionYT.onclick = () => {
-      uploadMenu.classList.add('hidden');
-      showImporterModal();
-    };
-  }
-
-  // 2. Lettura dei file locali (Logica mancante)
-  if (folderInput) {
-    folderInput.addEventListener('change', (e) => {
-      const files = Array.from(e.target.files).filter(f => f.type.startsWith('audio/') || f.type.startsWith('video/'));
-      if (!files.length) return;
-      
-      files.forEach(file => {
-        store.playlist.push({
-          file: file,
-          folder: file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : 'Sconosciuto',
-          cover: null,
-          path: file.webkitRelativePath || file.name
+  if (state) {
+    state.queue.forEach(item => {
+      if (item.yt) {
+        store.queue.push({
+          type:     'youtube',
+          id:       item.id,
+          title:    item.title,
+          thumb:    `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`,
+          duration: item.duration || 0,
         });
-      });
-      
-      renderLocalTrackList(document.getElementById('library'));
-      e.target.value = ''; // Resetta l'input
+      }
     });
-  }
 
-  // 3. Desktop Media Player Toggle
-  const nowPlayingTitle = document.getElementById('nowPlayingTitle');
-  const expandedPlayer  = document.getElementById('expandedPlayer');
-
-  if (nowPlayingTitle && expandedPlayer) {
-    nowPlayingTitle.addEventListener('click', () => {
-      expandedPlayer.classList.toggle('open');
-    });
-  }
-
-  // 4. Ricerca (Locale e YT)
-  const searchInput = document.getElementById('searchInput');
-  const clearBtn = document.getElementById('clearSearchBtn');
-  
-  if (searchInput && clearBtn) {
-    searchInput.addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase().trim();
-      clearBtn.classList.toggle('active', q.length > 0);
-      
-      // Filtra tracce locali
-      document.querySelectorAll('#library .track-item:not([data-yt-idx])').forEach(el => {
-        const title = el.querySelector('.track-title')?.innerText.toLowerCase() || '';
-        el.style.display = title.includes(q) ? 'flex' : 'none';
+    if (state.current?.ytId) {
+      playYT({
+        id:    state.current.ytId,
+        title: state.current.title || 'YouTube',
       });
 
-      // Cerca su YouTube
-      scheduleYTSearch(q);
-    });
+      setTimeout(() => {
+        try {
+          store.ytPlayer.seekTo(state.current.time || 0);
+          if (state.current.paused) store.ytPlayer.pauseVideo();
+        } catch {}
+      }, 1000);
+    }
 
-    clearBtn.addEventListener('click', () => {
-      searchInput.value = '';
-      searchInput.dispatchEvent(new Event('input'));
-    });
+    renderQueue();
   }
 });
+
+window._playLocal   = playLocal;
+window.togglePlayer = togglePlayer;
