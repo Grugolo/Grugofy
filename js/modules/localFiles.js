@@ -224,7 +224,22 @@ export function makeTrackEl(item, path, idx, isYT = false) {
   meta.append(dur);
 
   info.append(nameEl, meta);
-  el.append(cover, info);
+
+  // Bottone esplicito "aggiungi in coda" — funziona con click (desktop)
+  // oltre allo swipe touch già presente (mobile). Aggiunge in fondo;
+  // Ctrl/Cmd+click aggiunge in cima, come scorciatoia per chi lavora da PC.
+  const addBtn = document.createElement('button');
+  addBtn.className = 'track-add-btn';
+  addBtn.setAttribute('aria-label', 'Aggiungi in coda');
+  addBtn.title = 'Aggiungi in coda (Ctrl/Cmd+click: in cima)';
+  addBtn.innerHTML = _iconPlus();
+  addBtn.addEventListener('click', e => {
+    e.stopPropagation(); // non deve triggerare anche il click di riproduzione
+    const top = e.ctrlKey || e.metaKey;
+    enqueue(isYT ? item : store.playlist[idx], top);
+  });
+
+  el.append(cover, info, addBtn);
 
   // Click su track-info → riproduci
   el.querySelector('.track-info').addEventListener('click', () => {
@@ -235,10 +250,16 @@ export function makeTrackEl(item, path, idx, isYT = false) {
     }
   });
 
-  // Swipe → coda
+  // Swipe → coda (mobile)
   _setupSwipe(el, isYT ? item : store.playlist[idx]);
 
   return el;
+}
+
+function _iconPlus() {
+  return `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/>
+  </svg>`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
