@@ -191,7 +191,7 @@ function _setupYTResize() {
 
 function _getStoredYTHeight() {
   const v = parseFloat(localStorage.getItem(YT_HEIGHT_KEY));
-  return isFinite(v) ? v : 100; // default: schermo intero, come comportamento originale
+  return isFinite(v) ? v : 60; // default: 60% dell'altezza disponibile
 }
 
 function _setYTHeight(pct) {

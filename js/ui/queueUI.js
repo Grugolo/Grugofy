@@ -29,18 +29,25 @@ export function renderQueue() {
   store.queue.forEach((item, i) => {
     const div   = document.createElement('div');
     const title = item.type === 'youtube' ? item.title : item.file.name;
+    const isFirst = i === 0;
+    const isLast  = i === store.queue.length - 1;
 
+    div.className = 'queue-item';
     div.dataset.dragItem = i;
     div.innerHTML = `
       <span style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:.85rem;">
         ${escHtml(title)}
       </span>
-      <div style="display:flex;gap:12px;margin-left:10px;align-items:center;">
+      <div style="display:flex;gap:6px;margin-left:10px;align-items:center;">
+        <button data-up="${i}" aria-label="Sposta su" ${isFirst ? 'disabled' : ''}>${_iconArrow('up')}</button>
+        <button data-down="${i}" aria-label="Sposta giù" ${isLast ? 'disabled' : ''}>${_iconArrow('down')}</button>
         <button data-rem="${i}" aria-label="Rimuovi">${_iconX()}</button>
-        <span class="drag-handle" data-drag="${i}" aria-label="Trascina per riordinare">☰</span>
+        <span class="drag-handle" data-drag="${i}" aria-label="Trascina per riordinare (touch)">☰</span>
       </div>`;
 
-    div.querySelector('[data-rem]').onclick = () => removeFromQueue(i);
+    div.querySelector('[data-rem]').onclick  = () => removeFromQueue(i);
+    div.querySelector('[data-up]').onclick   = () => reorderQueue(i, i - 1);
+    div.querySelector('[data-down]').onclick = () => reorderQueue(i, i + 1);
     queueListEl.appendChild(div);
   });
 }
@@ -135,5 +142,13 @@ function _iconX() {
   return `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
     <line x1="2" y1="2" x2="14" y2="14" stroke="#ff4444" stroke-width="2" stroke-linecap="round"/>
     <line x1="14" y1="2" x2="2"  y2="14" stroke="#ff4444" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
+}
+
+/* ── Icona freccia su/giù per riordino (desktop-friendly) ────────── */
+function _iconArrow(dir) {
+  const d = dir === 'up' ? 'M6 12l4-4 4 4' : 'M6 8l4 4 4-4';
+  return `<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+    <path fill="none" stroke="var(--text-dim)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="${d}"/>
   </svg>`;
 }

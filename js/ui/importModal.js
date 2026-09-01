@@ -27,40 +27,56 @@ btnChooseFile.onclick = () => folderInput.click();
 // già gestito da localFiles.js sull'evento onchange dell'input).
 folderInput.addEventListener('change', () => closeModal());
 
-/* ── Opzione 2: link YouTube ─────────────────────────────────────── */
+/* ── Opzione 2: uno o più link YouTube (uno per riga) ────────────── */
 btnYtSubmit.onclick = async () => {
-  const url = ytUrlInput.value.trim();
-  if (!url) { _setStatus('Incolla un link YouTube valido.'); return; }
+  const urls = ytUrlInput.value
+    .split('\n')
+    .map(u => u.trim())
+    .filter(Boolean);
+
+  if (!urls.length) { _setStatus('Incolla almeno un link YouTube valido.'); return; }
 
   btnYtSubmit.disabled = true;
-  _setStatus('Recupero informazioni da YouTube…');
 
-  try {
-    const items = await fetchYouTubeItemsFromUrl(url);
+  let totalAdded = 0;
+  let failedUrls = 0;
 
-    if (!items.length) {
-      _setStatus('Nessun video trovato per questo link.');
-      return;
+  for (let i = 0; i < urls.length; i++) {
+    _setStatus(`Importazione ${i + 1}/${urls.length}…`);
+    try {
+      const items = await fetchYouTubeItemsFromUrl(urls[i]);
+      if (items.length) {
+        items.forEach(item => store.queue.push(item));
+        totalAdded += items.length;
+      } else {
+        failedUrls++;
+      }
+    } catch (err) {
+      console.error('[importModal] errore import YouTube:', urls[i], err);
+      failedUrls++;
     }
-
-    items.forEach(item => store.queue.push(item));
-    queueChanged(); // un solo notify invece di N, uno per item
-
-    _setStatus(`Aggiunti ${items.length} brano/i alla coda.`);
-    showToast(`+${items.length} in coda`);
-    ytUrlInput.value = '';
-
-    setTimeout(closeModal, 900);
-  } catch (err) {
-    console.error('[importModal] errore import YouTube:', err);
-    _setStatus('Errore durante l\'import. Riprova.');
-  } finally {
-    btnYtSubmit.disabled = false;
   }
+
+  if (totalAdded > 0) queueChanged(); // un solo notify per tutto il batch
+
+  if (totalAdded > 0) {
+    _setStatus(`Aggiunti ${totalAdded} brano/i alla coda${failedUrls ? ` (${failedUrls} link non riconosciuti)` : ''}.`);
+    showToast(`+${totalAdded} in coda`);
+    ytUrlInput.value = '';
+    setTimeout(closeModal, 1200);
+  } else {
+    _setStatus('Nessun brano trovato per i link inseriti.');
+  }
+
+  btnYtSubmit.disabled = false;
 };
 
 ytUrlInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') btnYtSubmit.click();
+  // Invio semplice conferma se c'è una sola riga; Shift+Invio va sempre a capo.
+  if (e.key === 'Enter' && !e.shiftKey && !ytUrlInput.value.includes('\n')) {
+    e.preventDefault();
+    btnYtSubmit.click();
+  }
 });
 
 /* ── Helpers ────────────────────────────────────────────────────── */
