@@ -13,7 +13,9 @@ export function on(name, handler) {
 
 export const EV = {
   PLAYER_CHANGE: 'player:change',
-  VISUAL_UPDATE:  'visual:update',
-  YT_PLAYING:     'yt:playing',
-  YT_STOPPED:     'yt:stopped',
+  VISUAL_UPDATE: 'visual:update',
+  YT_PLAYING:    'yt:playing',
+  YT_STOPPED:    'yt:stopped',
+  QUEUE_CHANGE:  'queue:change',   // aggiorna coda/playlist UI
+  STATE_CHANGE:  'state:change',   // patch generico sullo store (vedi store.setState)
 };

@@ -15,6 +15,14 @@ const titleEl     = document.getElementById('nowPlayingTitle');
 
 let _currentObjectURL = null;
 
+/* ── Wiring con queue.js (evita import ciclico) ─────────────────── */
+let _dequeueNext = () => false;
+
+/** Chiamata una volta da main.js per collegare la logica di coda. */
+export function wireQueue({ dequeueNext }) {
+  _dequeueNext = dequeueNext || _dequeueNext;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    SILENT ANCHOR — Brave/Android MediaSession
    ─────────────────────────────────────────────────────────────────
@@ -30,8 +38,6 @@ _silentEl.src    = _SILENT_WAV;
 _silentEl.loop   = true;
 _silentEl.volume = 0;
 
-// Ogni volta che il silent anchor parte, ri-registra i handler.
-// Brave li annulla a ogni cambio di stato audio.
 _silentEl.onplay = () => _bindMediaSession();
 
 function _silentActivate() {
@@ -47,7 +53,7 @@ function _silentDeactivate() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SEEKBAR POLL per YouTube (250ms)
+   SEEKBAR POLL per YouTube (1000ms)
    ═══════════════════════════════════════════════════════════════════ */
 let _ytPollTimer = null;
 let _pollTick    = 0;
@@ -80,7 +86,7 @@ export function startYTSeekPoll() {
     // Ri-registra i handler ogni ~5s (Brave li azzera spesso)
     if (++_pollTick % 20 === 0) _bindMediaSession();
 
-  }, 250);
+  }, 1000);
 }
 
 export function stopYTSeekPoll() {
@@ -168,8 +174,21 @@ export function playYT(item) {
 
   _ytWrapperVisible(true);
 
+  // Mantiene sveglio il Media Thread per il cambio in background
+  _silentActivate();
+
   if (store.ytReady && store.ytPlayer) {
-    store.ytPlayer.loadVideoById(item.id);
+    try {
+      store.ytPlayer.loadVideoById(item.id);
+
+      // FIX BACKGROUND: se l'app è a schermo spento, forza playVideo dopo un
+      // breve ritardo per superare il congelamento dell'IFrame.
+      setTimeout(() => {
+        if (store.ytPlayer && store.ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) {
+          store.ytPlayer.playVideo();
+        }
+      }, 300);
+    } catch (_) {}
   } else {
     store.ytPending = item.id;
     _ensureYTScript();
@@ -179,11 +198,7 @@ export function playYT(item) {
   saveState();
   emit(EV.VISUAL_UPDATE);
 
-  // Attiva subito il silent anchor + MediaSession.
-  // setPositionState con duration fittizia sblocca prev/next
-  // nella tendina di sistema anche prima che il poll parta.
   _mediaSessionYT(item);
-  _silentActivate();
   if ('mediaSession' in navigator) {
     try {
       navigator.mediaSession.setPositionState({
@@ -207,6 +222,7 @@ export function togglePlay() {
       if (state === YT.PlayerState.PLAYING) {
         store.ytPlayer.pauseVideo();
       } else {
+        _silentActivate();
         store.ytPlayer.playVideo();
       }
     } catch (_) {}
@@ -231,37 +247,35 @@ export function seek(pct) {
 }
 
 export function playNext() {
-  import('./queue.js').then(({ dequeueNext }) => {
-    if (dequeueNext()) return;
+  if (_dequeueNext()) return;
 
-    if (store.currentYTId) {
-      if (store.looping && store.ytReady && store.ytPlayer) {
-        try { store.ytPlayer.seekTo(0); store.ytPlayer.playVideo(); } catch (_) {}
-        return;
-      }
-      if (store.shuffle && store.ytResults.length > 1) {
-        const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
-        let rndIdx;
-        do { rndIdx = Math.floor(Math.random() * store.ytResults.length); }
-        while (rndIdx === curIdx);
-        playYT(store.ytResults[rndIdx]);
-        return;
-      }
-      const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
-      if (curIdx !== -1 && curIdx + 1 < store.ytResults.length) {
-        playYT(store.ytResults[curIdx + 1]);
-      }
+  if (store.currentYTId) {
+    if (store.looping && store.ytReady && store.ytPlayer) {
+      try { store.ytPlayer.seekTo(0); store.ytPlayer.playVideo(); } catch (_) {}
       return;
     }
-
-    let next = store.currentIdx + 1;
-    if (store.shuffle && store.shuffleOrder.length) {
-      const curPos = store.shuffleOrder.indexOf(store.currentIdx);
-      const nxtPos = (curPos + 1) % store.shuffleOrder.length;
-      next = store.shuffleOrder[nxtPos];
+    if (store.shuffleMode > 0 && store.ytResults.length > 1) {
+      const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
+      let rndIdx;
+      do { rndIdx = Math.floor(Math.random() * store.ytResults.length); }
+      while (rndIdx === curIdx);
+      playYT(store.ytResults[rndIdx]);
+      return;
     }
-    if (next < store.playlist.length) playLocal(next);
-  });
+    const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
+    if (curIdx !== -1 && curIdx + 1 < store.ytResults.length) {
+      playYT(store.ytResults[curIdx + 1]);
+    }
+    return;
+  }
+
+  let next = store.currentIdx + 1;
+  if (store.shuffleMode > 0 && store.shuffleOrder.length) {
+    const curPos = store.shuffleOrder.indexOf(store.currentIdx);
+    const nxtPos = (curPos + 1) % store.shuffleOrder.length;
+    next = store.shuffleOrder[nxtPos];
+  }
+  if (next < store.playlist.length) playLocal(next);
 }
 
 export function playPrev() {
@@ -305,7 +319,6 @@ mediaEl.ontimeupdate = () => {
   timeCurrent.textContent = formatTime(mediaEl.currentTime);
   timeTotal.textContent   = formatTime(mediaEl.duration);
 
-  // Aggiorna posizione nella notifica di sistema
   if ('mediaSession' in navigator && mediaEl.duration > 0) {
     try {
       navigator.mediaSession.setPositionState({
@@ -322,13 +335,13 @@ mediaEl.ontimeupdate = () => {
 };
 
 mediaEl.onplay = () => {
-  emit(EV.PLAYER_CHANGE, { playing: true });   // ← aggiungi detail
+  emit(EV.PLAYER_CHANGE, { playing: true });
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   _bindMediaSession();
 };
 
 mediaEl.onpause = () => {
-  emit(EV.PLAYER_CHANGE, { playing: false });  // ← aggiungi detail
+  emit(EV.PLAYER_CHANGE, { playing: false });
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   _bindMediaSession();
 };
@@ -356,6 +369,11 @@ window.onYouTubeIframeAPIReady = () => {
           store.ytPending = null;
         }
       },
+      onError: (e) => {
+        // Se un video YT fallisce in background (es. non disponibile o limitazione age), passa al successivo
+        console.warn('YouTube Player error:', e.data);
+        playNext();
+      },
       onStateChange: (e) => {
         if (e.data === YT.PlayerState.PLAYING) {
           emit(EV.YT_PLAYING);
@@ -369,7 +387,6 @@ window.onYouTubeIframeAPIReady = () => {
 
         if (e.data === YT.PlayerState.PAUSED) {
           stopYTSeekPoll();
-          // NON fermare _silentEl: Brave rimuoverebbe i controlli di sistema
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'paused';
             _bindMediaSession();
@@ -381,7 +398,9 @@ window.onYouTubeIframeAPIReady = () => {
           if (store.looping && store.ytReady && store.ytPlayer) {
             try { store.ytPlayer.seekTo(0); store.ytPlayer.playVideo(); } catch (_) {}
           } else {
-            playNext();
+            // Delay minimo prima di chiamare la traccia successiva
+            // per permettere alla MediaSession di sincronizzarsi
+            setTimeout(() => playNext(), 50);
           }
         }
 
@@ -433,16 +452,41 @@ function _mediaSessionLocal(track, title) {
   _bindMediaSession();
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   MEDIA SESSION FORZATA (Notifiche & Lockscreen)
+   ═══════════════════════════════════════════════════════════════════ */
+
 function _mediaSessionYT(item) {
   if (!('mediaSession' in navigator)) return;
+
+  // 1. Forza la presenza dell'Artwork per far attivare il widget grande dell'OS
   navigator.mediaSession.metadata = new MediaMetadata({
     title:   item.title,
     artist:  item.uploader || 'YouTube',
+    album:   'YouTube Stream',
     artwork: item.thumb
-      ? [{ src: item.thumb, sizes: '320x180', type: 'image/jpeg' }]
-      : [],
+      ? [
+          { src: item.thumb, sizes: '96x96',   type: 'image/jpeg' },
+          { src: item.thumb, sizes: '128x128', type: 'image/jpeg' },
+          { src: item.thumb, sizes: '192x192', type: 'image/jpeg' },
+          { src: item.thumb, sizes: '512x512', type: 'image/jpeg' },
+        ]
+      : []
   });
+
+  // 2. Forza lo stato a PLAYING (sblocca l'interfaccia notifica)
   navigator.mediaSession.playbackState = 'playing';
+
+  // 3. Imposta una posizione iniziale fittizia per obbligare Chrome/Brave
+  // a mostrare la barra di avanzamento e i pulsanti prev/next
+  try {
+    navigator.mediaSession.setPositionState({
+      duration:     item.duration || 180, // Se non c'è durata, usa un placeholder di 3 min
+      playbackRate: 1,
+      position:     0,
+    });
+  } catch (_) {}
+
   _bindMediaSession();
 }
 
@@ -455,20 +499,29 @@ function _bindMediaSession() {
   ms.setActionHandler('previoustrack', () => playPrev());
   ms.setActionHandler('nexttrack',     () => playNext());
 
-  // seekbackward/seekforward: richiesti da molti dispositivi BT
-  // per file locali fanno seek; per YT vengono ignorati
-  ms.setActionHandler('seekbackward', (d) => {
-    if (store.currentYTId) return;
-    const s = d?.seekOffset ?? 10;
-    mediaEl.currentTime = Math.max(0, mediaEl.currentTime - s);
-  });
-  ms.setActionHandler('seekforward', (d) => {
-    if (store.currentYTId) return;
-    const s = d?.seekOffset ?? 10;
-    mediaEl.currentTime = Math.min(mediaEl.duration || 0, mediaEl.currentTime + s);
+  // seekforward/seekbackward: su Android/Brave abilitare questi due handler
+  // costringe l'OS a mostrare i controlli estesi.
+  ms.setActionHandler('seekbackward', () => {
+    if (store.currentYTId && store.ytPlayer) {
+      try {
+        const cur = store.ytPlayer.getCurrentTime() || 0;
+        store.ytPlayer.seekTo(Math.max(0, cur - 10), true);
+      } catch (_) {}
+    } else {
+      mediaEl.currentTime = Math.max(0, mediaEl.currentTime - 10);
+    }
   });
 
-  // stop: alcuni dispositivi BT lo inviano al posto di pause
+  ms.setActionHandler('seekforward', () => {
+    if (store.currentYTId && store.ytPlayer) {
+      try {
+        const cur = store.ytPlayer.getCurrentTime() || 0;
+        store.ytPlayer.seekTo(cur + 10, true);
+      } catch (_) {}
+    } else {
+      mediaEl.currentTime = Math.min(mediaEl.duration || 0, mediaEl.currentTime + 10);
+    }
+  });
+
   try { ms.setActionHandler('stop', () => togglePlay()); } catch (_) {}
 }
-

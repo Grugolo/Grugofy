@@ -8,11 +8,11 @@ export function saveState() {
   const state = {
     queue: store.queue.map(_serialize),
     current: {
-      ytId:  store.currentYTId,
+      ytId:   store.currentYTId,
       ytItem: store.currentYTItem,
-      title: document.getElementById('nowPlayingTitle').textContent,
-      idx:   store.currentIdx,
-      time:  _getTime(),
+      title:  document.getElementById('nowPlayingTitle').textContent,
+      idx:    store.currentIdx,
+      time:   _getTime(),
       paused: _isPaused(),
     }
   };
