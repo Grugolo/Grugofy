@@ -1,12 +1,17 @@
-import { YT_API_KEY }                        from '../config.js';
+// ── youtube.js ───────────────────────────────────────────────────
+// Ricerca YouTube e avvio riproduzione YT.
+
 import { store }                             from '../core/store.js';
 import { playYT }                            from '../core/player.js';
-import { makeYTTrackEl }                     from './ytUI.js'; // Fixed to use YT specific UI element
-import { parseISO8601, escHtml, decodeHtml } from '../utils.js';
-  
-let ytGroup = null;
+import { makeTrackEl }                       from './localFiles.js';
+import { fetchYT }                           from './ytApi.js';
+import { parseISO8601, decodeHtml }          from '../utils.js';
+
+let ytGroup    = null;
 let ytTracksEl = null;
 let _lastReqId = 0;
+
+/* ── Ricerca con debounce ───────────────────────────────────────── */
 let _debounce = null;
 
 export function scheduleYTSearch(query, delayMs = 600) {
@@ -14,10 +19,15 @@ export function scheduleYTSearch(query, delayMs = 600) {
   _debounce = setTimeout(() => _search(query), delayMs);
 }
 
+/* ── Avvia riproduzione e aggiorna highlight ────────────────────── */
 export function playYTItem(item) {
   playYT(item);
   _highlight(item.id);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RICERCA
+   ═══════════════════════════════════════════════════════════════════ */
 
 async function _search(q) {
   const reqId = ++_lastReqId;
@@ -34,12 +44,21 @@ async function _search(q) {
   ytGroup.style.display = '';
   ytTracksEl.innerHTML = _skeletonHTML();
   ytTracksEl.hidden = false;
-  
+
   try {
-    const searchRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=6&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`
-    );
-    const searchData = await searchRes.json();
+    // 1. Search (con fallback automatico chiavi)
+    const searchData = await fetchYT('search', {
+      part: 'snippet',
+      type: 'video',
+      maxResults: 6,
+      q,
+    });
+
+    if (!searchData) {
+      ytTracksEl.innerHTML = `<div style="color:var(--text-dim);padding:10px;">Errore API: Tutte le chiavi sono esaurite</div>`;
+      return;
+    }
+
     const items = searchData.items || [];
 
     if (!items.length) {
@@ -47,26 +66,27 @@ async function _search(q) {
       return;
     }
 
-    const ids = items.map(i => i.id.videoId).join(',');
-    const detailRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${ids}&key=${YT_API_KEY}`
-    );
-    const detailData = await detailRes.json();
+    // 2. Durate (con fallback automatico chiavi)
+    const ids        = items.map(i => i.id.videoId).join(',');
+    const detailData = await fetchYT('videos', {
+      part: 'contentDetails',
+      id: ids,
+    });
 
     const durationMap = Object.fromEntries(
-      (detailData.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
+      (detailData?.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
     );
 
     store.ytResults = items.map(item => ({
-      type:     'youtube',
-      id:       item.id.videoId,
-      title:    decodeHtml(item.snippet.title),
-      thumb:    item.snippet.thumbnails?.medium?.url || '',
-      thumbnail: item.snippet.thumbnails?.default?.url || '', // per makeYTTrackEl
-      duration: durationMap[item.id.videoId] || 0,
-      uploader: decodeHtml(item.snippet.channelTitle || 'YouTube'),
+      type:        'youtube',
+      id:          item.id.videoId,
+      title:       decodeHtml(item.snippet.title),
+      thumb:       item.snippet.thumbnails?.medium?.url || '',
+      duration:    durationMap[item.id.videoId] || 0,
+      uploader:    decodeHtml(item.snippet.channelTitle || 'YouTube'),
+      publishedAt: item.snippet.publishedAt || null,
     }));
-    
+
     if (reqId !== _lastReqId) return;
     _renderResults(store.ytResults);
 
@@ -76,12 +96,18 @@ async function _search(q) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   RENDER
+   ═══════════════════════════════════════════════════════════════════ */
+
 function _ensureYTFolder() {
   const library = document.getElementById('library');
+
   if (ytGroup && !library.contains(ytGroup)) {
     ytGroup = null;
     ytTracksEl = null;
   }
+
   if (ytGroup) return;
 
   ytGroup = document.createElement('div');
@@ -96,7 +122,10 @@ function _ensureYTFolder() {
   ytTracksEl = document.createElement('div');
   ytTracksEl.className = 'folder-tracks';
 
-  header.addEventListener('click', () => { ytTracksEl.hidden = !ytTracksEl.hidden; });
+  header.addEventListener('click', () => {
+    ytTracksEl.hidden = !ytTracksEl.hidden;
+  });
+
   ytGroup.append(header, ytTracksEl);
   library.prepend(ytGroup);
 }
@@ -104,22 +133,21 @@ function _ensureYTFolder() {
 function _renderResults(results) {
   ytTracksEl.innerHTML = '';
   results.forEach((video, i) => {
-    const el = makeYTTrackEl(video);
-    el.dataset.ytIdx = i; // Per highlight
-    ytTracksEl.appendChild(el);
+    ytTracksEl.appendChild(makeTrackEl(video, '', i, true));
   });
 }
 
 function _highlight(videoId) {
   if (!ytTracksEl) return;
   ytTracksEl.querySelectorAll('.track-item').forEach(el => {
-    const idx = parseInt(el.dataset.ytIdx);
+    const idx   = parseInt(el.dataset.ytIdx);
     const match = store.ytResults[idx]?.id === videoId;
     el.style.borderLeft = match ? '5px solid var(--accent)' : '';
     el.style.background = match ? '#252525' : '';
   });
 }
 
+/* ── Skeleton loader ────────────────────────────────────────────── */
 function _skeletonHTML() {
   const row = `
     <div class="skeleton-item">
