@@ -173,6 +173,7 @@ export function playYT(item) {
   timeTotal.textContent   = '0:00';
 
   _ytWrapperVisible(true);
+  _hideYTStuckMessage();
 
   // Mantiene sveglio il Media Thread per il cambio in background
   _silentActivate();
@@ -180,14 +181,7 @@ export function playYT(item) {
   if (store.ytReady && store.ytPlayer) {
     try {
       store.ytPlayer.loadVideoById(item.id);
-
-      // FIX BACKGROUND: se l'app è a schermo spento, forza playVideo dopo un
-      // breve ritardo per superare il congelamento dell'IFrame.
-      setTimeout(() => {
-        if (store.ytPlayer && store.ytPlayer.getPlayerState() !== YT.PlayerState.PLAYING) {
-          store.ytPlayer.playVideo();
-        }
-      }, 300);
+      _watchdogStart(item.id);
     } catch (_) {}
   } else {
     store.ytPending = item.id;
@@ -352,6 +346,127 @@ mediaEl.onended = () => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
+   WATCHDOG AVVIO YOUTUBE — sostituisce il vecchio "singolo setTimeout"
+   ─────────────────────────────────────────────────────────────────
+   Perché serve: in background (schermo spento), Android/Chrome
+   rallentano e infine sospendono i setTimeout/setInterval. Un solo
+   tentativo isolato a 300ms può semplicemente non scattare mai.
+   Strategia:
+   1. Retry con backoff crescente (300ms, 800ms, 2000ms, 4000ms) finché
+      il player risulta PLAYING o si esauriscono i tentativi.
+   2. Un listener su `visibilitychange` forza subito un controllo/retry
+      non appena schermo o tab tornano attivi — è uno degli eventi che
+      il browser garantisce di consegnare anche dopo il throttling.
+   3. Se tutti i tentativi falliscono, mostra un messaggio "Riprova"
+      invece di lasciare il caricamento infinito silenzioso.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const _WATCHDOG_DELAYS = [300, 800, 2000, 4000]; // ms, crescenti (per stati davvero "fermi")
+const _BUFFERING_TIMEOUT_MS = 15000; // tempo massimo tollerato in BUFFERING continuo
+
+let _watchdogVideoId  = null;   // video per cui il watchdog è attivo
+let _watchdogTimer     = null;
+let _watchdogAttempt   = 0;
+let _watchdogStartTime = 0;
+
+function _watchdogStart(videoId) {
+  _watchdogStop();
+  _watchdogVideoId  = videoId;
+  _watchdogAttempt  = 0;
+  _watchdogStartTime = Date.now();
+  _watchdogScheduleNext();
+}
+
+function _watchdogStop() {
+  if (_watchdogTimer) { clearTimeout(_watchdogTimer); _watchdogTimer = null; }
+  _watchdogVideoId  = null;
+  _watchdogAttempt  = 0;
+  _watchdogStartTime = 0;
+}
+
+function _watchdogScheduleNext() {
+  if (_watchdogAttempt >= _WATCHDOG_DELAYS.length) {
+    _showYTStuckMessage();
+    return;
+  }
+  const delay = _WATCHDOG_DELAYS[_watchdogAttempt];
+  _watchdogTimer = setTimeout(() => _watchdogCheck(), delay);
+}
+
+/** Verifica se il video è partito; se no, ritenta play e pianifica il prossimo controllo. */
+function _watchdogCheck() {
+  // Il brano è cambiato nel frattempo (utente ha skippato): niente da fare.
+  if (store.currentYTId !== _watchdogVideoId) { _watchdogStop(); return; }
+  if (!store.ytPlayer) { _watchdogScheduleNext(); return; }
+
+  let state;
+  try { state = store.ytPlayer.getPlayerState(); } catch { state = null; }
+
+  // PLAYING: partito, nessun altro tentativo necessario.
+  if (state === YT.PlayerState.PLAYING) {
+    _watchdogStop();
+    return;
+  }
+
+  // BUFFERING: sta caricando normalmente — richiamare playVideo() qui
+  // rischia di interrompere/riavviare il buffering in corso, che è
+  // probabilmente la causa per cui il video sembrava "non partire mai".
+  // Non consumiamo tentativi, ma applichiamo comunque un tetto massimo
+  // di tempo totale, altrimenti una rete lenta terrebbe il watchdog in
+  // attesa per sempre senza mai avvisare l'utente.
+  if (state === YT.PlayerState.BUFFERING) {
+    if (Date.now() - _watchdogStartTime > _BUFFERING_TIMEOUT_MS) {
+      _showYTStuckMessage();
+      return;
+    }
+    _watchdogTimer = setTimeout(() => _watchdogCheck(), 1000);
+    return;
+  }
+
+  // Solo per stati realmente "fermi" (UNSTARTED, CUED, PAUSED, o stato
+  // illeggibile) ha senso forzare di nuovo playVideo().
+  _watchdogAttempt++;
+  try { store.ytPlayer.playVideo(); } catch (_) {}
+  _watchdogScheduleNext();
+}
+
+/** Forza un controllo immediato quando schermo/tab tornano visibili. */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _watchdogVideoId) {
+    _watchdogCheck();
+  }
+});
+
+/* ── Messaggio "video bloccato" con pulsante di ripristino manuale ── */
+let _ytStuckEl = null;
+
+function _showYTStuckMessage() {
+  if (!_ytStuckEl) {
+    _ytStuckEl = document.createElement('div');
+    _ytStuckEl.id = 'ytStuckMessage';
+    _ytStuckEl.innerHTML = `
+      <span>Il video non parte. Il browser potrebbe averlo sospeso in background.</span>
+      <button type="button">Riprova</button>`;
+    _ytStuckEl.querySelector('button').addEventListener('click', () => {
+      const id = store.currentYTId;
+      _hideYTStuckMessage();
+      if (id && store.ytPlayer) {
+        try {
+          store.ytPlayer.loadVideoById(id);
+          _watchdogStart(id);
+        } catch (_) {}
+      }
+    });
+    document.getElementById('ytWrapper').appendChild(_ytStuckEl);
+  }
+  _ytStuckEl.classList.add('visible');
+}
+
+function _hideYTStuckMessage() {
+  if (_ytStuckEl) _ytStuckEl.classList.remove('visible');
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    YT IFrame API
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -366,12 +481,15 @@ window.onYouTubeIframeAPIReady = () => {
         store.ytReady = true;
         if (store.ytPending) {
           store.ytPlayer.loadVideoById(store.ytPending);
+          _watchdogStart(store.ytPending);
           store.ytPending = null;
         }
       },
       onError: (e) => {
-        // Se un video YT fallisce in background (es. non disponibile o limitazione age), passa al successivo
+        // Se un video YT fallisce (es. non disponibile o limitazione age), passa al successivo
         console.warn('YouTube Player error:', e.data);
+        _watchdogStop();
+        _hideYTStuckMessage();
         playNext();
       },
       onStateChange: (e) => {
@@ -379,6 +497,8 @@ window.onYouTubeIframeAPIReady = () => {
           emit(EV.YT_PLAYING);
           startYTSeekPoll();
           _silentActivate();
+          _watchdogStop();
+          _hideYTStuckMessage();
           if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'playing';
             _bindMediaSession();
