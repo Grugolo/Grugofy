@@ -65,7 +65,7 @@ function _buildQuery() {
 
 /** Euristica: "Artista - Titolo" oppure fallback su uploader/nome intero come titolo. */
 function _splitArtistTitle(raw, fallbackArtist) {
-  const cleaned = raw.replace(/\s*\(.*?(official|video|audio|lyrics|hd|4k).*?\)\s*/gi, '').trim();
+  const cleaned = raw.replace(/\s*\(.*?(official|ufficiale|videoclip|clip|video|audio|lyrics|testo|topic|hq|hd|4k).*?\)\s*/gi, '').trim();
   const parts   = cleaned.split(/\s+-\s+/);
   if (parts.length >= 2) {
     return { artist: parts[0].trim(), track: parts.slice(1).join(' - ').trim() };
