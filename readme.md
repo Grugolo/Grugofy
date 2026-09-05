@@ -106,3 +106,31 @@ Le API YouTube Data v3 hanno un budget di **10.000 unità/giorno** per progetto 
 - `playlistItems.list` / `videos.list` → **1 unità per pagina** (fino a 50 elementi) — importare anche playlist molto grandi costa pochissimo
 
 Per questo l'import da link YouTube (playlist o video) non applica alcun limite: al massimo costa qualche unità anche per centinaia di brani. La ricerca a testo libero (barra di ricerca, o playlist `.txt` con nomi anziché ID/URL) resta invece l'operazione più "costosa" e va usata con più parsimonia se si dispone di una sola chiave API.
+
+## Fix (round 3)
+
+- **Service worker riscritto** (`service-worker.js`): la versione precedente era cache-first puro con path hardcoded (`/Jukebox/...`), quindi serviva sempre gli stessi file vecchi anche dopo un deploy, e si rompeva se il progetto veniva hostato con un nome cartella diverso. Ora usa path relativi (funziona con qualsiasi nome repo/cartella), invalida automaticamente la cache delle versioni precedenti (`CACHE_VERSION`), ed è network-first per JS/HTML/CSS — i file di sviluppo sono sempre aggiornati, la cache serve solo da fallback offline.
+- **Riordino/aggiunta coda utilizzabile da desktop**: il vecchio meccanismo era solo touch (`touchstart/touchmove`), quindi inutilizzabile con mouse. Aggiunto un bottone "+" esplicito su ogni traccia della libreria (click per aggiungere in fondo, Ctrl/Cmd+click per aggiungere in cima) e frecce su/giù nella coda per riordinare — funzionano identicamente con mouse o touch. Lo swipe touch resta disponibile in aggiunta su mobile.
+- **Import multi-link YouTube**: il campo era un `<input>` a singola riga. Ora è una `<textarea>` che accetta più URL (uno per riga, video o playlist), processati in sequenza con indicatore di progresso.
+- **Player YouTube ridimensionabile — bug CSS risolto**: `#ytWrapper` usava `inset: 0`, che fissa contemporaneamente `top` e `bottom` rendendo qualunque `height` personalizzata priva di effetto. Corretto liberando `bottom` in modalità `.resizable`. Il resize ora funziona davvero; altezza di default portata al 60%.
+- **Caricamento/blocco video YouTube in background — watchdog di ripristino** (`core/player.js`): il vecchio codice tentava un solo `setTimeout` isolato a 300ms per forzare la partenza del video quando lo schermo è spento. Poiché Android/Chrome rallentano e infine sospendono i timer in background, un singolo tentativo può semplicemente non scattare mai — da qui i casi di video "bloccato in caricamento per sempre". Sostituito con:
+  - retry automatico a backoff crescente (300ms, 800ms, 2s, 4s) finché il player risulta effettivamente `PLAYING`;
+  - un listener su `visibilitychange` che forza un controllo immediato non appena schermo o tab tornano attivi (uno dei pochi eventi che il browser garantisce di consegnare anche dopo il throttling);
+  - se tutti i tentativi falliscono, un messaggio esplicito "Il video non parte" con pulsante Riprova sovrapposto al player, invece del caricamento infinito silenzioso di prima.
+
+  Questo non elimina il throttling imposto dal sistema operativo/browser (nessun sito può farlo), ma trasforma un singolo tentativo silenzioso in un sistema che si ripara da solo appena possibile, e che avverte l'utente quando non ci riesce.
+
+## Fix (round 4): watchdog che interferiva col buffering normale
+
+Il watchdog introdotto nel round precedente chiamava `playVideo()` ad ogni check che non trovasse il player già in `PLAYING` — incluso lo stato `BUFFERING`, che è la fase normale e attesa tra "video richiesto" e "video partito". Richiamare `playVideo()` mentre l'IFrame sta ancora bufferando può interrompere/riavviare il caricamento in corso, che è probabilmente la causa per cui alcuni video sembravano "non partire mai": ogni volta che stavano per finire di bufferare, il watchdog li disturbava di nuovo.
+
+Corretto in `core/player.js`:
+- **`BUFFERING` non consuma più tentativi né richiama `playVideo()`** — il watchdog aspetta in silenzio, ricontrollando ogni secondo.
+- Aggiunto un **timeout massimo separato** (15s) per il solo stato `BUFFERING`: se una rete lenta tiene il video in buffering per troppo tempo, scatta comunque il messaggio "riprova" invece di aspettare all'infinito.
+- Il `playVideo()` forzato resta riservato ai soli stati realmente "fermi" (`UNSTARTED`, `CUED`, `PAUSED` inatteso, o stato illeggibile) — cioè i casi in cui il player è davvero bloccato, non semplicemente al lavoro.
+
+### Nota su architetture alternative (SimpMusic e simili)
+
+App come SimpMusic non usano l'IFrame embed di YouTube: estraggono l'URL dello stream audio/video diretto tramite le API interne di YouTube e lo riproducono con un player nativo (es. ExoPlayer), bypassando completamente l'iframe. Questo è ciò che permette loro crossfade, gapless e controllo fine del buffering — hanno il file in mano, esattamente come i brani locali di questo progetto.
+
+Replicare questo approccio qui richiederebbe un backend dedicato all'estrazione degli stream (reverse-engineering delle API interne di YouTube, soggette a modifiche periodiche e a contromisure anti-scraping) ed è **esplicitamente vietato dai Termini di Servizio di YouTube** per client non ufficiali. Per questo il progetto resta sull'IFrame API ufficiale, accettando i suoi limiti (nessun controllo sul buffering, nessun preload reale) in cambio di piena conformità e nessuna dipendenza da infrastrutture esterne fragili.
