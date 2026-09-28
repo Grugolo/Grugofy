@@ -1,10 +1,12 @@
 // ── importModal.js ───────────────────────────────────────────────
 // Modale "+": scegli tra file locali (audio/video/playlist .txt) o
-// import diretto da link YouTube (video singolo o playlist intera).
+// import diretto da testo libero — una riga per elemento, ciascuna
+// può essere: un link YouTube (video o playlist), una riga CSV
+// "Titolo, ytid, [durata]", o una query testuale (ricerca automatica).
 
 import { store }                    from '../core/store.js';
 import { showToast }                from '../utils.js';
-import { fetchYouTubeItemsFromUrl, queueChanged } from '../core/queue.js';
+import { parseLinesToQueueItems, queueChanged } from '../core/queue.js';
 
 const modal        = document.getElementById('importModal');
 const backdrop      = document.getElementById('importModalBackdrop');
@@ -27,45 +29,36 @@ btnChooseFile.onclick = () => folderInput.click();
 // già gestito da localFiles.js sull'evento onchange dell'input).
 folderInput.addEventListener('change', () => closeModal());
 
-/* ── Opzione 2: uno o più link YouTube (uno per riga) ────────────── */
+/* ── Opzione 2: righe libere — link YouTube, CSV, o query testuale ── */
 btnYtSubmit.onclick = async () => {
-  const urls = ytUrlInput.value
+  const lines = ytUrlInput.value
     .split('\n')
     .map(u => u.trim())
     .filter(Boolean);
 
-  if (!urls.length) { _setStatus('Incolla almeno un link YouTube valido.'); return; }
+  if (!lines.length) { _setStatus('Incolla almeno una riga (link, CSV o titolo brano).'); return; }
 
   btnYtSubmit.disabled = true;
+  _setStatus(`Elaborazione di ${lines.length} riga/e…`);
 
-  let totalAdded = 0;
-  let failedUrls = 0;
-
-  for (let i = 0; i < urls.length; i++) {
-    _setStatus(`Importazione ${i + 1}/${urls.length}…`);
-    try {
-      const items = await fetchYouTubeItemsFromUrl(urls[i]);
-      if (items.length) {
-        items.forEach(item => store.queue.push(item));
-        totalAdded += items.length;
-      } else {
-        failedUrls++;
-      }
-    } catch (err) {
-      console.error('[importModal] errore import YouTube:', urls[i], err);
-      failedUrls++;
-    }
+  let items = [];
+  try {
+    items = await parseLinesToQueueItems(lines);
+  } catch (err) {
+    console.error('[importModal] errore import:', err);
   }
 
-  if (totalAdded > 0) queueChanged(); // un solo notify per tutto il batch
+  if (items.length > 0) {
+    items.forEach(item => store.queue.push(item));
+    queueChanged(); // un solo notify per tutto il batch
 
-  if (totalAdded > 0) {
-    _setStatus(`Aggiunti ${totalAdded} brano/i alla coda${failedUrls ? ` (${failedUrls} link non riconosciuti)` : ''}.`);
-    showToast(`+${totalAdded} in coda`);
+    const skipped = lines.length - items.length;
+    _setStatus(`Aggiunti ${items.length} brano/i alla coda${skipped > 0 ? ` (${skipped} riga/e non riconosciute)` : ''}.`);
+    showToast(`+${items.length} in coda`);
     ytUrlInput.value = '';
     setTimeout(closeModal, 1200);
   } else {
-    _setStatus('Nessun brano trovato per i link inseriti.');
+    _setStatus('Nessun brano trovato per le righe inserite.');
   }
 
   btnYtSubmit.disabled = false;
