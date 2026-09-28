@@ -6,7 +6,7 @@
 // Incrementa CACHE_VERSION ad ogni release per forzare la pulizia
 // della cache vecchia sui dispositivi degli utenti.
 
-const CACHE_VERSION = 'grugofy-v2';
+const CACHE_VERSION = 'grugofy-v3';
 
 // Percorsi RELATIVI alla posizione del service worker: funzionano sia
 // se il sito è servito da /, /Jukebox/, /Grugofy/ o qualsiasi altro

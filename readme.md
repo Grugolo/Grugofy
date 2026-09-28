@@ -30,6 +30,7 @@ Grugofy-main/
 │   │   ├── events.js      # Event bus (EventTarget)
 │   │   ├── player.js      # Motore riproduzione locale + YT
 │   │   ├── queue.js       # Logica coda e playlist (nessun import diretto di player.js)
+│   │   ├── settings.js    # Preferenze utente persistenti (localStorage)
 │   │   └── persist.js     # Salvataggio/ripristino sessione
 │   ├── modules/
 │   │   ├── localFiles.js  # Caricamento cartella, cover, durata, ingest condiviso (input + drag&drop)
@@ -40,7 +41,8 @@ Grugofy-main/
 │       ├── controls.js       # Player bar, icone SVG, updateUI
 │       ├── expandedPlayer.js # Player espanso, gesture, resize YT
 │       ├── queueUI.js        # Render coda e playlist salvate
-│       └── importModal.js    # Modale "+": file locali o link/lista YouTube
+│       ├── importModal.js    # Modale "+": file locali, link YouTube, CSV o titoli (una riga per elemento)
+│       └── settingsModal.js  # Modale "⚙": impostazioni
 ```
 
 ### Wiring tra moduli (novità)
@@ -134,3 +136,18 @@ Corretto in `core/player.js`:
 App come SimpMusic non usano l'IFrame embed di YouTube: estraggono l'URL dello stream audio/video diretto tramite le API interne di YouTube e lo riproducono con un player nativo (es. ExoPlayer), bypassando completamente l'iframe. Questo è ciò che permette loro crossfade, gapless e controllo fine del buffering — hanno il file in mano, esattamente come i brani locali di questo progetto.
 
 Replicare questo approccio qui richiederebbe un backend dedicato all'estrazione degli stream (reverse-engineering delle API interne di YouTube, soggette a modifiche periodiche e a contromisure anti-scraping) ed è **esplicitamente vietato dai Termini di Servizio di YouTube** per client non ufficiali. Per questo il progetto resta sull'IFrame API ufficiale, accettando i suoi limiti (nessun controllo sul buffering, nessun preload reale) in cambio di piena conformità e nessuna dipendenza da infrastrutture esterne fragili.
+
+
+## Round 5
+
+- **Ancora silenziosa corretta** (`core/player.js`): la documentazione Chrome indica che gli stream audio silenziosi non ottengono l'esenzione dal throttling in background. `_silentEl` aveva `volume = 0`; ora è `0.001` (il contenuto WAV resta silenzio puro, quindi non si sente nulla). L'ancora ora parte con qualsiasi riproduzione (anche locale) e si ferma solo quando né locale né YouTube stanno suonando (`_silentDeactivateIfFullyPaused`). Effetto collaterale: la tab mostra sempre l'icona audio durante l'ascolto. Non è una garanzia assoluta: dipende da versione/politiche di Chrome/Brave e da Android.
+- **Import da textarea con formati misti** (`ui/importModal.js` + `parseLinesToQueueItems` in `core/queue.js`): ogni riga può essere un link YouTube (video o playlist intera), una riga CSV `Titolo, ytid, durata`, oppure un semplice titolo, cercato su YouTube.
+- **Preferenza audio ufficiale**: per le righe di solo testo, si guardano i primi 5 risultati e si sceglie quello con canale "- Topic" o titolo con "official audio"/"audio ufficiale"; se nessuno corrisponde si usa il primo risultato. Vale anche per i file `.txt` importati.
+- **Menu ⚙** (`ui/settingsModal.js`, `core/settings.js`): ritardo ricerca durante la digitazione (100–1500 ms), interruttore provider YouTube (se spento la ricerca YouTube non parte), interruttore preferenza audio ufficiale. Salvate in localStorage.
+- **Non implementato (rimandato come richiesto)**: formato playlist con URL completo al posto del solo ytid.
+- Service worker: `CACHE_VERSION` portata a `grugofy-v3` per forzare l'aggiornamento.
+
+### Limiti noti
+- Righe CSV che puntano a file locali (`Titolo, NomeFile.mp3`) sono gestite solo nell'import di file `.txt` dalla libreria, non nella textarea (lì la libreria potrebbe non essere caricata).
+- Le voci trovate per testo non hanno la durata (richiederebbe una chiamata `videos.list` in più).
+- Il toggle "provider" oggi controlla solo la ricerca YouTube; riproduzione e import da link restano attivi.
