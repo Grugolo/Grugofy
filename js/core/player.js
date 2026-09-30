@@ -370,28 +370,41 @@ mediaEl.onended = () => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   WATCHDOG AVVIO YOUTUBE — sostituisce il vecchio "singolo setTimeout"
+   WATCHDOG AVVIO YOUTUBE
    ─────────────────────────────────────────────────────────────────
-   Perché serve: in background (schermo spento), Android/Chrome
-   rallentano e infine sospendono i setTimeout/setInterval. Un solo
-   tentativo isolato a 300ms può semplicemente non scattare mai.
-   Strategia:
-   1. Retry con backoff crescente (300ms, 800ms, 2000ms, 4000ms) finché
-      il player risulta PLAYING o si esauriscono i tentativi.
-   2. Un listener su `visibilitychange` forza subito un controllo/retry
-      non appena schermo o tab tornano attivi — è uno degli eventi che
-      il browser garantisce di consegnare anche dopo il throttling.
-   3. Se tutti i tentativi falliscono, mostra un messaggio "Riprova"
-      invece di lasciare il caricamento infinito silenzioso.
+   Due meccanismi distinti, per due problemi distinti:
+
+   1. RETRY LEGGERO (mentre siamo in primo piano): dopo un cambio
+      brano il video passa normalmente per CUED → BUFFERING → PLAYING;
+      un retry con backoff copre i casi in cui questa transizione si
+      inceppa per un attimo (rete lenta, evento perso).
+
+   2. RICREAZIONE COMPLETA DEL PLAYER (al ritorno da background):
+      test reali mostrano che quando lo schermo resta spento a lungo,
+      l'iframe di YouTube su Brave/Chrome Android non va semplicemente
+      "in pausa" — il suo thread viene sospeso e risulta spesso
+      irrecuperabile anche dopo che la pagina torna visibile e i
+      timer riprendono a scattare. In quel caso richiamare playVideo()
+      sul player esistente non serve a nulla (l'abbiamo verificato:
+      il watchdog leggero da solo NON risolveva il blocco). L'unica
+      strada è distruggere l'iframe e ricrearlo da zero con lo stesso
+      video, cosa che qui facciamo automaticamente al risveglio,
+      senza che l'utente debba più toccare nulla manualmente.
    ═══════════════════════════════════════════════════════════════════ */
 
 const _WATCHDOG_DELAYS = [300, 800, 2000, 4000]; // ms, crescenti (per stati davvero "fermi")
 const _BUFFERING_TIMEOUT_MS = 15000; // tempo massimo tollerato in BUFFERING continuo
+const _HIDDEN_STALL_THRESHOLD_MS = 2000; // dopo quanto tempo "fermo" al risveglio si passa alla ricreazione
 
 let _watchdogVideoId  = null;   // video per cui il watchdog è attivo
 let _watchdogTimer     = null;
 let _watchdogAttempt   = 0;
 let _watchdogStartTime = 0;
+
+let _wasHidden        = false; // true se la pagina è stata nascosta (schermo spento/altra app) durante l'ultimo periodo
+let _hiddenSince       = 0;
+let _recreateInFlight  = false; // evita ricreazioni concorrenti se più eventi arrivano vicini
+let _pendingResumeTime = 0;     // posizione (secondi) da ripristinare dopo la ricreazione del player
 
 function _watchdogStart(videoId) {
   _watchdogStop();
@@ -433,8 +446,7 @@ function _watchdogCheck() {
   }
 
   // BUFFERING: sta caricando normalmente — richiamare playVideo() qui
-  // rischia di interrompere/riavviare il buffering in corso, che è
-  // probabilmente la causa per cui il video sembrava "non partire mai".
+  // rischia di interrompere/riavviare il buffering in corso.
   // Non consumiamo tentativi, ma applichiamo comunque un tetto massimo
   // di tempo totale, altrimenti una rete lenta terrebbe il watchdog in
   // attesa per sempre senza mai avvisare l'utente.
@@ -454,10 +466,99 @@ function _watchdogCheck() {
   _watchdogScheduleNext();
 }
 
+/* ── Ricreazione completa dell'iframe YT (dopo lungo background) ─── */
+
+/**
+ * Distrugge l'iframe YT esistente e ne crea uno nuovo, ripartendo dallo
+ * stesso video da dove era rimasto (se recuperabile) o dall'inizio.
+ * Necessario perché su Brave/Chrome Android un iframe rimasto a lungo
+ * in background risulta spesso irrecuperabile con un semplice playVideo().
+ */
+function _recreateYTPlayer(videoId) {
+  if (_recreateInFlight) return;
+  _recreateInFlight = true;
+  _watchdogStop();
+
+  let resumeTime = 0;
+  try { resumeTime = store.ytPlayer?.getCurrentTime() || 0; } catch (_) {}
+
+  try { store.ytPlayer?.destroy(); } catch (_) {}
+  store.ytPlayer = null;
+  store.ytReady  = false;
+
+  // destroy() rimuove l'<iframe> e, poiché l'IFrame API sostituisce
+  // l'elemento originale al momento della creazione, l'id "ytPlayerEl"
+  // potrebbe non esistere più da nessuna parte nel DOM dopo destroy().
+  // Per questo non ci affidiamo a document.getElementById('ytPlayerEl')
+  // per pulirlo: lo ricreiamo esplicitamente da zero dentro il
+  // contenitore stabile #ytWrapper, che invece non viene mai toccato
+  // dall'IFrame API.
+  const wrapper = document.getElementById('ytWrapper');
+  const oldEl   = document.getElementById('ytPlayerEl');
+  if (oldEl) oldEl.remove();
+  if (wrapper) {
+    const freshEl = document.createElement('div');
+    freshEl.id = 'ytPlayerEl';
+    wrapper.insertBefore(freshEl, wrapper.firstChild);
+  }
+
+  store.ytPending    = videoId;
+  _pendingResumeTime = resumeTime;
+
+  // Nel caso quasi certo in cui lo script IFrame API sia già caricato
+  // (il player esisteva prima di essere distrutto), ricreiamo subito.
+  // Se per qualche motivo non lo fosse, onYouTubeIframeAPIReady se ne
+  // occuperà da solo leggendo store.ytPending, come al primo avvio.
+  if (window.YT && window.YT.Player) {
+    _createYTPlayerInstance();
+  } else {
+    _ensureYTScript();
+  }
+
+  _recreateInFlight = false;
+}
+
 /** Forza un controllo immediato quando schermo/tab tornano visibili. */
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && _watchdogVideoId) {
-    _watchdogCheck();
+  if (document.visibilityState === 'hidden') {
+    _wasHidden    = true;
+    _hiddenSince  = Date.now();
+    return;
+  }
+
+  // Tornati visibili: se la pagina era rimasta nascosta per un tempo
+  // significativo (non una micro-interruzione tipo notifica lampo) e
+  // c'è un video YT attivo che non risulta PLAYING, non ha senso
+  // riprovare playVideo() sul player esistente — ricreiamo l'iframe.
+  const hiddenDuration = _wasHidden ? Date.now() - _hiddenSince : 0;
+  _wasHidden = false;
+
+  if (hiddenDuration >= _HIDDEN_STALL_THRESHOLD_MS && store.currentYTId) {
+    let state;
+    try { state = store.ytPlayer?.getPlayerState(); } catch { state = null; }
+
+    if (state !== YT.PlayerState.PLAYING) {
+      _recreateYTPlayer(store.currentYTId);
+      return;
+    }
+  }
+
+  // Nessun lungo periodo in background: comportamento leggero invariato.
+  if (_watchdogVideoId) _watchdogCheck();
+});
+
+/**
+ * Su Android, quando l'app torna in primo piano da uno stato "congelato"
+ * dal sistema operativo, `pageshow` con `event.persisted` è talvolta più
+ * affidabile di `visibilitychange` per rilevare il rientro. Applichiamo
+ * la stessa logica di ricreazione come rete di sicurezza aggiuntiva.
+ */
+window.addEventListener('pageshow', (event) => {
+  if (!event.persisted || !store.currentYTId) return;
+  let state;
+  try { state = store.ytPlayer?.getPlayerState(); } catch { state = null; }
+  if (state !== YT.PlayerState.PLAYING) {
+    _recreateYTPlayer(store.currentYTId);
   }
 });
 
@@ -492,9 +593,14 @@ function _hideYTStuckMessage() {
 
 /* ═══════════════════════════════════════════════════════════════════
    YT IFrame API
+   ─────────────────────────────────────────────────────────────────
+   _createYTPlayerInstance() è estratta a parte (invece di stare solo
+   dentro onYouTubeIframeAPIReady) perché deve poter essere richiamata
+   anche da _recreateYTPlayer() quando l'iframe viene distrutto e
+   ricreato dopo un lungo periodo in background.
    ═══════════════════════════════════════════════════════════════════ */
 
-window.onYouTubeIframeAPIReady = () => {
+function _createYTPlayerInstance() {
   store.ytPlayer = new YT.Player('ytPlayerEl', {
     height: '100%',
     width:  '100%',
@@ -504,7 +610,17 @@ window.onYouTubeIframeAPIReady = () => {
       onReady: () => {
         store.ytReady = true;
         if (store.ytPending) {
+          const resumeAt = _pendingResumeTime;
+          _pendingResumeTime = 0;
+
           store.ytPlayer.loadVideoById(store.ytPending);
+
+          // Se stiamo ripristinando dopo una ricreazione, riporta il video
+          // al punto in cui era rimasto invece di ripartire da zero.
+          if (resumeAt > 1) {
+            try { store.ytPlayer.seekTo(resumeAt, true); } catch (_) {}
+          }
+
           _watchdogStart(store.ytPending);
           store.ytPending = null;
         }
@@ -557,6 +673,10 @@ window.onYouTubeIframeAPIReady = () => {
       },
     },
   });
+}
+
+window.onYouTubeIframeAPIReady = () => {
+  _createYTPlayerInstance();
 };
 
 /* ═══════════════════════════════════════════════════════════════════
