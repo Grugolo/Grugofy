@@ -151,3 +151,21 @@ Replicare questo approccio qui richiederebbe un backend dedicato all'estrazione 
 - Righe CSV che puntano a file locali (`Titolo, NomeFile.mp3`) sono gestite solo nell'import di file `.txt` dalla libreria, non nella textarea (lì la libreria potrebbe non essere caricata).
 - Le voci trovate per testo non hanno la durata (richiederebbe una chiamata `videos.list` in più).
 - Il toggle "provider" oggi controlla solo la ricerca YouTube; riproduzione e import da link restano attivi.
+
+
+## Round 6: ricreazione dell'iframe YouTube dopo lungo background
+
+Test reali hanno confermato che, su Brave/Chrome Android, un video YouTube lasciato a lungo con schermo spento non si riprende da solo nemmeno al risveglio: l'iframe risulta bloccato in modo permanente, non semplicemente in pausa. Un audio locale (`<audio>` nativo), nello stesso scenario, continua a suonare regolarmente per tutta la sessione — perché i browser esentano dal throttling i soli media element di prima parte, non un iframe di terze parti come quello di YouTube, indipendentemente da cos'altro sta accadendo nella pagina.
+
+Per questo il "watchdog leggero" (retry di `playVideo()`) non era sufficiente in questo scenario: se l'iframe è davvero bloccato, richiamare play su un player morto non serve a nulla. La soluzione implementata in `core/player.js`:
+
+- **`_recreateYTPlayer()`**: quando la pagina torna visibile dopo essere rimasta nascosta per almeno 2 secondi (soglia scelta per non scattare su micro-interruzioni tipo una notifica) e il video non risulta `PLAYING`, l'iframe YouTube viene **distrutto (`destroy()`) e ricreato da zero**, con la stessa canzone e — quando recuperabile — dallo stesso punto in cui era arrivato (`getCurrentTime()` letto prima della distruzione, `seekTo()` dopo la ricreazione).
+- Il contenitore `#ytPlayerEl` viene ricreato esplicitamente come nuovo elemento pulito dentro `#ytWrapper`, perché l'IFrame API sostituisce l'elemento originale al momento della creazione — dopo `destroy()` l'id storico potrebbe non esistere più nel DOM, quindi non ci affidiamo a trovarlo con `getElementById`.
+- Aggiunto anche un listener su `pageshow` con `event.persisted` come ulteriore rete di sicurezza: su Android, quando l'app torna in primo piano da uno stato "congelato" dal sistema, questo evento è a volte più affidabile di `visibilitychange`.
+- **Ancora silenziosa** (round 5): resta attiva con la correzione già fatta (volume 0.001 invece di 0), utile in generale, ma da sola **non risolve** il blocco dell'iframe — per questo la vera soluzione qui è la ricreazione, non un ulteriore tentativo di "tenerlo sveglio".
+
+### Limite onesto
+
+Anche con la ricreazione, la musica **si interrompe comunque per la durata in cui il video era bloccato** (non c'è modo di "recuperare" l'audio perso durante il blocco) — quello che cambia è che ora **riparte da sola** al risveglio dello schermo, senza richiedere più interazione manuale (skip o tap su play) come accadeva prima. Nessuna pagina web può impedire al sistema operativo di sospendere un iframe di terze parti quando lo schermo è spento: il throttling in sé resta, ciò che abbiamo eliminato è la necessità di intervento manuale per uscirne.
+
+Cache del service worker portata a `grugofy-v4`.
