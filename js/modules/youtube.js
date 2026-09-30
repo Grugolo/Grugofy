@@ -6,16 +6,26 @@ import { playYT }                            from '../core/player.js';
 import { makeTrackEl }                       from './localFiles.js';
 import { fetchYT }                           from './ytApi.js';
 import { parseISO8601, decodeHtml }          from '../utils.js';
+import { getSetting }                        from '../core/settings.js';
 
 let ytGroup    = null;
 let ytTracksEl = null;
 let _lastReqId = 0;
 
-/* ── Ricerca con debounce ───────────────────────────────────────── */
+/* ── Ricerca con debounce (durata configurabile nelle impostazioni) ── */
 let _debounce = null;
 
-export function scheduleYTSearch(query, delayMs = 600) {
+export function scheduleYTSearch(query) {
   clearTimeout(_debounce);
+
+  if (!getSetting('providerYouTube')) {
+    // Provider disattivato: nasconde la sezione risultati se presente e non cerca.
+    if (ytGroup) ytGroup.style.display = 'none';
+    store.ytResults = [];
+    return;
+  }
+
+  const delayMs = getSetting('searchDebounceMs');
   _debounce = setTimeout(() => _search(query), delayMs);
 }
 

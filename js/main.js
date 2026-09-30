@@ -6,6 +6,7 @@
 import './modules/localFiles.js';
 import './ui/controls.js';
 import './ui/importModal.js';
+import './ui/settingsModal.js';
 import './modules/lyrics.js';
 
 import { updateUI }                          from './ui/controls.js';

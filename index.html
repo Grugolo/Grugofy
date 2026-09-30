@@ -17,6 +17,7 @@
     <input type="text" id="searchInput" placeholder="Cerca brano…" autocomplete="off">
     <button id="clearSearchBtn">✕</button>
   </div>
+  <button id="btnOpenSettings" class="btn-upload" aria-label="Impostazioni">⚙</button>
 </header>
 
 <main id="mainContent">
@@ -106,10 +107,42 @@
 
       <div class="modal-divider">oppure</div>
 
-      <label class="modal-label" for="importYtUrl">Link YouTube — uno o più (video o playlist), uno per riga</label>
-      <textarea id="importYtUrl" rows="3" placeholder="https://www.youtube.com/watch?v=…&#10;https://www.youtube.com/playlist?list=…&#10;…" autocomplete="off"></textarea>
+      <label class="modal-label" for="importYtUrl">Una riga per elemento: link YouTube, CSV "Titolo, ytid, durata" o titolo brano</label>
+      <textarea id="importYtUrl" rows="4" placeholder="https://www.youtube.com/watch?v=…&#10;https://www.youtube.com/playlist?list=…&#10;Bohemian Rhapsody, dQw4w9WgXcQ, 354&#10;Nome canzone da cercare" autocomplete="off"></textarea>
       <button id="importYtSubmitBtn" class="modal-option modal-option--accent">Importa da YouTube</button>
       <div id="importYtStatus" class="modal-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modale Impostazioni -->
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-backdrop" id="settingsModalBackdrop"></div>
+  <div class="modal-panel">
+    <div class="modal-header">
+      <span>Impostazioni</span>
+      <button id="settingsModalClose" aria-label="Chiudi">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="settings-row">
+        <label for="settingSearchDebounce">Ritardo ricerca durante la digitazione</label>
+        <div class="settings-row-control">
+          <input type="range" id="settingSearchDebounce" min="100" max="1500" step="50">
+          <span id="settingSearchDebounceValue" class="settings-value"></span>
+        </div>
+      </div>
+
+      <div class="settings-row settings-row--switch">
+        <label for="settingProviderYouTube">Provider: YouTube</label>
+        <input type="checkbox" id="settingProviderYouTube" class="settings-switch">
+      </div>
+
+      <div class="settings-row settings-row--switch">
+        <label for="settingPreferOfficialAudio">Privilegia audio ufficiale nelle ricerche automatiche</label>
+        <input type="checkbox" id="settingPreferOfficialAudio" class="settings-switch">
+      </div>
+      <p class="settings-hint">Quando una riga importata è solo testo (nessun link o ID), viene cercata su YouTube: se attivo, tra i primi risultati si preferisce un canale "Topic" o un titolo con "official audio".</p>
     </div>
   </div>
 </div>

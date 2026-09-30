@@ -8,6 +8,7 @@ import { showToast, parseISO8601 } from '../utils.js';
 import { saveState }    from './persist.js';
 import { emit, EV }     from './events.js';
 import { fetchYT }      from '../modules/ytApi.js';
+import { getSetting }   from './settings.js';
 
 const LS_KEY = 'f_p';
 
@@ -164,7 +165,11 @@ export function deletePlaylist(name) {
 }
 
 /**
- * Importa una playlist da un array di righe di testo.
+ * Importa una playlist da un array di righe di testo (usata per i file
+ * .txt caricati dalla libreria locale). A differenza di
+ * `parseLinesToQueueItems`, qui gestiamo anche righe CSV che referenziano
+ * file locali ("Titolo, NomeFile.mp3"), dato che la libreria è già
+ * caricata in questo contesto.
  * @param {string} name - Nome della playlist
  * @param {string[]} lines - Righe del file .txt
  */
@@ -193,6 +198,7 @@ export async function importPlaylistFromLines(name, lines) {
           duration: parseInt(col3, 10) || 0
         });
       } else {
+        // Riferimento a file locale: gestito solo qui, non in parseLinesToQueueItems.
         parsedItems.push({
           n: col1,
           f: col2,
@@ -200,22 +206,15 @@ export async function importPlaylistFromLines(name, lines) {
         });
       }
     }
-    // 2. URL diretto di YouTube
+    // 2. URL diretto di YouTube (anche playlist intere)
     else if (line.includes('youtube.com/') || line.includes('youtu.be/')) {
-      const match = line.match(/(?:v=|\/)([\w-]{11})/);
-      if (match) {
-        parsedItems.push({
-          yt: true,
-          id: match[1],
-          title: `YouTube Track (${match[1]})`,
-          duration: 0
-        });
-      }
+      const items = await fetchYouTubeItemsFromUrl(line);
+      items.forEach(it => parsedItems.push({ yt: true, id: it.id, title: it.title, duration: it.duration || 0 }));
     }
-    // 3. Testo semplice: cerca il brano su YouTube Data API (con fallback chiavi)
+    // 3. Testo semplice: ricerca automatica (con preferenza audio ufficiale)
     else {
-      const item = await _searchFirstResult(line);
-      if (item) parsedItems.push(item);
+      const item = await _searchBestResult(line);
+      if (item) parsedItems.push({ yt: true, id: item.id, title: item.title, duration: item.duration || 0 });
     }
   }
 
@@ -232,12 +231,103 @@ export async function importPlaylistFromLines(name, lines) {
   showToast(`Playlist "${name}" importata (${parsedItems.length} brani)`);
 }
 
-/** Cerca il primo risultato YT per una riga di testo (usa fallback chiavi). */
-async function _searchFirstResult(query) {
-  const data = await fetchYT('search', { part: 'snippet', type: 'video', maxResults: 1, q: query });
-  const item = data?.items?.[0];
-  if (!item) return null;
-  return { yt: true, id: item.id.videoId, title: item.snippet.title, duration: 0 };
+/**
+ * Converte righe di testo libero in item pronti per la coda
+ * (`{type:'youtube', id, title, thumb, duration, uploader}`).
+ * Riconosce, riga per riga: CSV "Titolo, ytid, [durata]", URL diretto
+ * YouTube, o testo libero (ricerca automatica con fallback chiavi,
+ * con preferenza opzionale per audio ufficiale — vedi settings.js).
+ * Usata sia per l'import di playlist salvate sia per l'inserimento
+ * diretto in coda dalla modale "+".
+ * @param {string[]} lines
+ * @returns {Promise<Array<object>>}
+ */
+export async function parseLinesToQueueItems(lines) {
+  if (!lines || !lines.length) return [];
+
+  const results = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r/g, '').trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const parts = line.split(',').map(p => p.trim());
+
+    // 1. CSV: "Titolo, ytid, [durata]" — solo se col2 è un ID YouTube valido
+    //    (11 caratteri alfanumerici/underscore/trattino). Righe CSV per file
+    //    locali ("Titolo, NomeFile.mp3") non sono gestibili qui: non abbiamo
+    //    la libreria locale caricata in questo contesto, vengono ignorate.
+    if (parts.length >= 2 && /^[A-Za-z0-9_-]{11}$/.test(parts[1])) {
+      const [title, id, durationStr] = parts;
+      results.push({
+        type:     'youtube',
+        id,
+        title,
+        thumb:    `https://img.youtube.com/vi/${id}/mqdefault.jpg`,
+        duration: parseInt(durationStr, 10) || 0,
+        uploader: '',
+      });
+      continue;
+    }
+
+    // 2. URL diretto (video singolo o playlist) — riusa il parser già
+    //    esistente per i link, che gestisce anche la paginazione playlist.
+    if (line.includes('youtube.com/') || line.includes('youtu.be/')) {
+      const items = await fetchYouTubeItemsFromUrl(line);
+      results.push(...items);
+      continue;
+    }
+
+    // 3. Testo libero: ricerca automatica (con preferenza audio ufficiale
+    //    se attiva nelle impostazioni).
+    const item = await _searchBestResult(line);
+    if (item) results.push(item);
+  }
+
+  return results;
+}
+
+/**
+ * Cerca su YouTube una query testuale e sceglie il risultato migliore.
+ * Se la preferenza "audio ufficiale" è attiva, tra i primi risultati
+ * privilegia un canale "Topic" (auto-generato da YouTube per la musica
+ * ufficiale) o un titolo che contiene esplicitamente "official audio"/
+ * "audio ufficiale". Se nessuno corrisponde, usa il primo risultato
+ * normale — non blocchiamo mai una ricerca solo per questa preferenza.
+ */
+async function _searchBestResult(query) {
+  const wantOfficial = getSetting('preferOfficialAudio');
+  const maxResults = wantOfficial ? 5 : 1;
+
+  const data = await fetchYT('search', { part: 'snippet', type: 'video', maxResults, q: query });
+  const items = data?.items || [];
+  if (!items.length) return null;
+
+  let chosen = items[0];
+
+  if (wantOfficial) {
+    const officialMatch = items.find(it => _looksLikeOfficialAudio(it.snippet));
+    if (officialMatch) chosen = officialMatch;
+  }
+
+  return {
+    type:     'youtube',
+    id:       chosen.id.videoId,
+    title:    chosen.snippet.title,
+    thumb:    chosen.snippet.thumbnails?.medium?.url || '',
+    duration: 0, // la durata esatta arriva solo con videos.list; non la richiediamo qui per non appesantire l'import
+    uploader: chosen.snippet.channelTitle || 'YouTube',
+  };
+}
+
+/** Euristica: canale "Topic" (musica ufficiale auto-generata da YouTube) o titolo con "official audio". */
+function _looksLikeOfficialAudio(snippet) {
+  const channel = (snippet.channelTitle || '').toLowerCase();
+  const title    = (snippet.title || '').toLowerCase();
+  return channel.endsWith('- topic')
+    || channel.endsWith('-topic')
+    || /\bofficial\s*audio\b/.test(title)
+    || /\baudio\s*ufficiale\b/.test(title);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

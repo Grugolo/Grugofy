@@ -24,10 +24,15 @@ export function wireQueue({ dequeueNext }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SILENT ANCHOR — Brave/Android MediaSession
+   SILENT ANCHOR — mantiene sveglio il tab in background
    ─────────────────────────────────────────────────────────────────
-   Brave su Android mostra prev/next SOLO se un <audio> nativo è
-   in stato "playing". Usiamo un WAV silenzioso in loop.
+   Chrome/Brave esentano dal throttling in background SOLO le tab che
+   risultano "udibili" (icona audio visibile) — non basta avere un
+   <audio> in play, il volume deve essere > 0. Fonte ufficiale Chrome:
+   "Silent audio streams do not grant exemptions" (developer.chrome.com).
+   Per questo usiamo un volume minimo ma non-zero: il contenuto del WAV
+   è comunque puro silenzio digitale, quindi resta impercettibile
+   all'orecchio, ma Chrome lo riconosce come audio attivo.
    REGOLA: non fermare mai _silentEl mentre YT è attivo.
    ═══════════════════════════════════════════════════════════════════ */
 const _SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAA'
@@ -36,7 +41,7 @@ const _SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AA
 const _silentEl = new Audio();
 _silentEl.src    = _SILENT_WAV;
 _silentEl.loop   = true;
-_silentEl.volume = 0;
+_silentEl.volume = 0.001; // >0 per contare come "udibile" agli occhi del browser; il WAV è comunque silenzio puro
 
 _silentEl.onplay = () => _bindMediaSession();
 
@@ -50,6 +55,16 @@ function _silentActivate() {
 function _silentDeactivate() {
   _silentEl.pause();
   _silentEl.currentTime = 0;
+}
+
+/** Ferma l'ancora solo se né il locale né YouTube stanno effettivamente suonando. */
+function _silentDeactivateIfFullyPaused() {
+  const localPlaying = !mediaEl.paused && !mediaEl.ended;
+  let ytPlaying = false;
+  if (store.currentYTId && store.ytReady && store.ytPlayer) {
+    try { ytPlaying = store.ytPlayer.getPlayerState() === YT.PlayerState.PLAYING; } catch { ytPlaying = false; }
+  }
+  if (!localPlaying && !ytPlaying) _silentDeactivate();
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -115,7 +130,6 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
 
   _ytStop();
   stopYTSeekPoll();
-  _silentDeactivate();
   emit(EV.YT_STOPPED);
   _ytWrapperVisible(false);
 
@@ -123,6 +137,12 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
   if (_currentObjectURL) URL.revokeObjectURL(_currentObjectURL);
   _currentObjectURL = URL.createObjectURL(track.file);
   mediaEl.src = _currentObjectURL;
+
+  // Ancora silenziosa sempre attiva durante la riproduzione (anche locale):
+  // mantiene la tab "udibile" agli occhi del browser, così l'intera sessione
+  // resta esente dal throttling in background fin da subito, invece di
+  // attivarsi solo al primo cambio verso YouTube (quando potrebbe essere tardi).
+  _silentActivate();
 
   mediaEl.play().then(() => {
     if ('mediaSession' in navigator) {
@@ -338,6 +358,10 @@ mediaEl.onpause = () => {
   emit(EV.PLAYER_CHANGE, { playing: false });
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   _bindMediaSession();
+  // Ferma l'ancora silenziosa solo se anche YT non sta suonando: se l'utente
+  // ha semplicemente messo in pausa il locale ma YT è attivo altrove nella
+  // sessione, l'ancora deve restare accesa.
+  _silentDeactivateIfFullyPaused();
 };
 
 mediaEl.onended = () => {
@@ -511,6 +535,7 @@ window.onYouTubeIframeAPIReady = () => {
             navigator.mediaSession.playbackState = 'paused';
             _bindMediaSession();
           }
+          _silentDeactivateIfFullyPaused();
         }
 
         if (e.data === YT.PlayerState.ENDED) {
