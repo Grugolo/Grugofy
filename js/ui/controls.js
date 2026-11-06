@@ -4,6 +4,7 @@
 import { store }                                         from '../core/store.js';
 import { on, EV }                                        from '../core/events.js';
 import { mediaEl, togglePlay, playNext, playPrev, seek } from '../core/player.js';
+import { showToast }                                     from '../utils.js';
 
 /* ── SVG Icons ──────────────────────────────────────────────────── */
 const ICONS = {
@@ -35,9 +36,9 @@ const btnShuffle = document.getElementById('btnShuffle');
 const seekSlider = document.getElementById('seekSlider');
 
 /* ── Button listeners ───────────────────────────────────────────── */
-btnPlay.onclick    = togglePlay;
-btnNext.onclick    = playNext;
-btnPrev.onclick    = playPrev;
+btnPlay.onclick    = () => togglePlay();
+btnNext.onclick    = () => { if (!playNext()) showToast('Nessun brano successivo'); };
+btnPrev.onclick    = () => playPrev();
 seekSlider.oninput = () => seek(Number(seekSlider.value));
 
 btnLoop.onclick = () => {

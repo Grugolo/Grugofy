@@ -12,8 +12,15 @@ const expandedEl    = document.getElementById('expandedPlayer');
 const visualEl      = document.getElementById('visualContainer');
 const ytWrapperEl   = document.getElementById('ytWrapper');
 const ytResizeHandle = document.getElementById('ytResizeHandle');
+const playerBarEl   = document.getElementById('playerBar');
 
 const YT_HEIGHT_KEY = 'yt_player_height_pct';
+
+// Limiti del ridimensionamento YT: il bordo inferiore del player deve
+// restare almeno HANDLE_MARGIN_PX sopra il fondo dell'area visibile, così
+// l'handle (±10px attorno al bordo) non finisce mai sotto la barra fissa.
+const YT_MIN_PCT       = 25;
+const HANDLE_MARGIN_PX = 24;
 
 /* ── Ascolta eventi del bus ─────────────────────────────────────── */
 on(EV.VISUAL_UPDATE, () => updateVisual());
@@ -75,6 +82,7 @@ export function updateVisual() {
 
 /* ── Setup gesture sull'expanded player (chiamato una volta all'init) */
 export function setupExpandedSwipe() {
+  _setupPlayerBarSync();
   _setupSwipeNavigation();
   _setupVisualGestures();
   _setupYTResize();
@@ -156,23 +164,38 @@ function _setupVisualGestures() {
   });
 }
 
+/* ── Altezza reale della barra inferiore ─────────────────────────
+   --player-h (CSS) dimensiona #expandedPlayer e il padding della
+   libreria. Era fisso a 130px, ma la barra reale è più alta: l'area
+   espansa finiva in parte sotto la barra. Ora segue l'altezza misurata. */
+function _setupPlayerBarSync() {
+  const sync = () => {
+    const h = playerBarEl.offsetHeight;
+    if (h > 0) document.documentElement.style.setProperty('--player-h', `${h}px`);
+    _applyStoredYTHeight(); // l'area utile è cambiata: riclamp
+  };
+
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(sync).observe(playerBarEl);
+  }
+  window.addEventListener('resize', sync);
+  sync();
+}
+
 /* ── Ridimensionamento player YouTube (desktop + touch) ──────────
    Trascinando l'handle si cambia l'altezza di #ytWrapper espressa
-   in percentuale dell'altezza disponibile in #expandedPlayer.
-   La percentuale scelta viene salvata e riapplicata alle sessioni
-   successive.                                                    */
+   in percentuale dell'altezza di #expandedPlayer (= area visibile
+   sopra la barra). La percentuale scelta viene salvata e riapplicata
+   alle sessioni successive, sempre entro i limiti correnti.        */
 function _setupYTResize() {
-  let dragging   = false;
-  let startY     = 0;
-  let startPct   = 50;
-
-  const MIN_PCT = 25;
-  const MAX_PCT = 100;
+  let dragging = false;
+  let startY   = 0;
+  let startPct = 50;
 
   ytResizeHandle.addEventListener('pointerdown', e => {
     dragging = true;
     startY   = e.clientY;
-    startPct = _getStoredYTHeight();
+    startPct = _clampPct(_getStoredYTHeight());
     ytResizeHandle.setPointerCapture(e.pointerId);
   });
 
@@ -180,13 +203,22 @@ function _setupYTResize() {
     if (!dragging) return;
     const containerH = expandedEl.offsetHeight || 1;
     const deltaPct   = ((e.clientY - startY) / containerH) * 100;
-    const newPct     = Math.min(MAX_PCT, Math.max(MIN_PCT, startPct + deltaPct));
-    _setYTHeight(newPct);
+    _setYTHeight(_clampPct(startPct + deltaPct));
   });
 
   const _endDrag = () => { dragging = false; };
   ytResizeHandle.addEventListener('pointerup', _endDrag);
   ytResizeHandle.addEventListener('pointercancel', _endDrag);
+}
+
+/** Massimo consentito (%): lascia HANDLE_MARGIN_PX liberi sotto il player. */
+function _maxPct() {
+  const h = expandedEl.offsetHeight || 1;
+  return Math.max(YT_MIN_PCT, ((h - HANDLE_MARGIN_PX) / h) * 100);
+}
+
+function _clampPct(pct) {
+  return Math.min(_maxPct(), Math.max(YT_MIN_PCT, pct));
 }
 
 function _getStoredYTHeight() {
@@ -199,6 +231,7 @@ function _setYTHeight(pct) {
   ytWrapperEl.style.setProperty('--yt-height', `${pct}%`);
 }
 
+/** Applica la % salvata, ma entro i limiti correnti (rotazione, barra più alta, ecc.). La % salvata non viene alterata. */
 function _applyStoredYTHeight() {
-  ytWrapperEl.style.setProperty('--yt-height', `${_getStoredYTHeight()}%`);
+  ytWrapperEl.style.setProperty('--yt-height', `${_clampPct(_getStoredYTHeight())}%`);
 }
