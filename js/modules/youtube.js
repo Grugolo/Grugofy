@@ -4,8 +4,8 @@
 import { store }                             from '../core/store.js';
 import { playYT }                            from '../core/player.js';
 import { makeTrackEl }                       from './localFiles.js';
-import { fetchYT }                           from './ytApi.js';
-import { parseISO8601, decodeHtml }          from '../utils.js';
+import { fetchYT, fetchDurations }           from './ytApi.js';
+import { decodeHtml }                        from '../utils.js';
 import { getSetting }                        from '../core/settings.js';
 
 let ytGroup    = null;
@@ -69,6 +69,9 @@ async function _search(q) {
       return;
     }
 
+    // Risposta superata da una ricerca più recente: scarta senza toccare lo stato.
+    if (reqId !== _lastReqId) return;
+
     const items = searchData.items || [];
 
     if (!items.length) {
@@ -76,16 +79,10 @@ async function _search(q) {
       return;
     }
 
-    // 2. Durate (con fallback automatico chiavi)
-    const ids        = items.map(i => i.id.videoId).join(',');
-    const detailData = await fetchYT('videos', {
-      part: 'contentDetails',
-      id: ids,
-    });
+    // 2. Durate (videos.list, con fallback automatico chiavi + cache)
+    const durationMap = await fetchDurations(items.map(i => i.id.videoId));
 
-    const durationMap = Object.fromEntries(
-      (detailData?.items || []).map(v => [v.id, parseISO8601(v.contentDetails.duration)])
-    );
+    if (reqId !== _lastReqId) return;
 
     store.ytResults = items.map(item => ({
       type:        'youtube',
@@ -97,7 +94,6 @@ async function _search(q) {
       publishedAt: item.snippet.publishedAt || null,
     }));
 
-    if (reqId !== _lastReqId) return;
     _renderResults(store.ytResults);
 
   } catch (err) {

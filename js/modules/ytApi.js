@@ -3,6 +3,7 @@
 // automatico su più chiavi (usato da youtube.js e da queue.js).
 
 import { YT_API_KEY } from '../config.js';
+import { parseISO8601 } from '../utils.js';
 
 /* ── Costo in "unità quota" per endpoint (valori ufficiali Google) ─ */
 const ENDPOINT_COST = {
@@ -40,6 +41,36 @@ export async function fetchYT(endpoint, paramsObj = {}) {
   }
 
   return null; // nessuna chiave ha funzionato
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DURATE (videos.list) — helper unico, con cache in memoria
+   ─────────────────────────────────────────────────────────────────
+   Costo: 1 unità quota ogni 50 id (limite API). Gli id già noti non
+   vengono richiesti di nuovo. Gli id non restituiti (video rimossi,
+   privati) o senza durata (live) risultano 0 e NON vengono messi in
+   cache, così un tentativo successivo può riprovare.
+   @param {string[]} ids
+   @returns {Promise<Record<string, number>>} mappa id → secondi
+   ═══════════════════════════════════════════════════════════════════ */
+const _durationCache = new Map();
+
+export async function fetchDurations(ids) {
+  const unique  = [...new Set((ids || []).filter(Boolean))];
+  const missing = unique.filter(id => !_durationCache.has(id));
+
+  for (let i = 0; i < missing.length; i += 50) {
+    const chunk = missing.slice(i, i + 50);
+    const data  = await fetchYT('videos', { part: 'contentDetails', id: chunk.join(',') });
+    if (!data) break; // errore di rete o chiavi esaurite: restituisci quanto già noto
+
+    for (const v of data.items || []) {
+      const sec = parseISO8601(v.contentDetails?.duration);
+      if (sec > 0) _durationCache.set(v.id, sec);
+    }
+  }
+
+  return Object.fromEntries(unique.map(id => [id, _durationCache.get(id) || 0]));
 }
 
 /* ═══════════════════════════════════════════════════════════════════
