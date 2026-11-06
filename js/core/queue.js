@@ -7,7 +7,7 @@ import { store }        from './store.js';
 import { showToast, parseISO8601 } from '../utils.js';
 import { saveState }    from './persist.js';
 import { emit, EV }     from './events.js';
-import { fetchYT }      from '../modules/ytApi.js';
+import { fetchYT, fetchDurations } from '../modules/ytApi.js';
 import { getSetting }   from './settings.js';
 
 const LS_KEY = 'f_p';
@@ -223,6 +223,9 @@ export async function importPlaylistFromLines(name, lines) {
     return;
   }
 
+  // Completa le durate mancanti (righe senza durata o trovate per testo)
+  await _fillMissingDurations(parsedItems.filter(it => it.yt));
+
   const allPlaylists = loadPlaylists();
   allPlaylists[name] = parsedItems;
   localStorage.setItem(LS_KEY, JSON.stringify(allPlaylists));
@@ -284,7 +287,24 @@ export async function parseLinesToQueueItems(lines) {
     if (item) results.push(item);
   }
 
+  // Un'unica videos.list (a blocchi da 50) per tutte le durate mancanti
+  await _fillMissingDurations(results);
+
   return results;
+}
+
+/**
+ * Completa `duration` (in place) per gli elementi YouTube che ne sono
+ * privi (0/undefined): righe CSV senza durata e risultati trovati per
+ * testo. Usa fetchDurations: 1 unità quota ogni 50 id, con cache.
+ * @param {Array<{id:string, duration?:number}>} items
+ */
+async function _fillMissingDurations(items) {
+  const missing = items.filter(it => it && it.id && !it.duration);
+  if (!missing.length) return;
+
+  const map = await fetchDurations(missing.map(it => it.id));
+  missing.forEach(it => { it.duration = map[it.id] || 0; });
 }
 
 /**
@@ -315,7 +335,7 @@ async function _searchBestResult(query) {
     id:       chosen.id.videoId,
     title:    chosen.snippet.title,
     thumb:    chosen.snippet.thumbnails?.medium?.url || '',
-    duration: 0, // la durata esatta arriva solo con videos.list; non la richiediamo qui per non appesantire l'import
+    duration: 0, // completata in blocco da _fillMissingDurations (videos.list)
     uploader: chosen.snippet.channelTitle || 'YouTube',
   };
 }
@@ -334,7 +354,7 @@ function _looksLikeOfficialAudio(snippet) {
    IMPORT DA LINK YOUTUBE (video singolo o playlist intera)
    ═══════════════════════════════════════════════════════════════════
    Costo quota: playlistItems.list = 1 unità ogni 50 brani, videos.list
-   (durate) = 1 unità ogni 50 id. Import anche di playlist molto grandi
+   (durate, via fetchDurations) = 1 unità ogni 50 id. Import anche di playlist molto grandi
    costa quindi pochissimo — nessun limite artificiale applicato qui.
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -412,15 +432,8 @@ async function _fetchFullPlaylist(playlistId) {
 
   if (!rawItems.length) return [];
 
-  // Recupera le durate in blocchi da 50 id (limite API di videos.list)
-  const durationMap = {};
-  for (let i = 0; i < rawItems.length; i += 50) {
-    const chunk = rawItems.slice(i, i + 50);
-    const data  = await fetchYT('videos', { part: 'contentDetails', id: chunk.map(x => x.id).join(',') });
-    for (const v of data?.items || []) {
-      durationMap[v.id] = parseISO8601(v.contentDetails.duration);
-    }
-  }
+  // Durate in blocchi da 50 id (helper condiviso con cache)
+  const durationMap = await fetchDurations(rawItems.map(x => x.id));
 
   return rawItems.map(it => ({
     type:     'youtube',

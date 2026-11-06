@@ -1,10 +1,10 @@
 // ── player.js ────────────────────────────────────────────────────
 // Motore di riproduzione unificato (locale + YouTube).
 
-import { store }       from './store.js';
-import { formatTime }  from '../utils.js';
-import { emit, EV }    from './events.js';
-import { saveState }   from './persist.js';
+import { store }                from './store.js';
+import { formatTime }           from '../utils.js';
+import { emit, EV }             from './events.js';
+import { saveState }            from './persist.js';
 
 export const mediaEl = document.getElementById('mediaEl');
 
@@ -24,47 +24,215 @@ export function wireQueue({ dequeueNext }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SILENT ANCHOR — mantiene sveglio il tab in background
+   SILENT ANCHOR — mantiene viva la sessione media della pagina
    ─────────────────────────────────────────────────────────────────
-   Chrome/Brave esentano dal throttling in background SOLO le tab che
-   risultano "udibili" (icona audio visibile) — non basta avere un
-   <audio> in play, il volume deve essere > 0. Fonte ufficiale Chrome:
-   "Silent audio streams do not grant exemptions" (developer.chrome.com).
-   Per questo usiamo un volume minimo ma non-zero: il contenuto del WAV
-   è comunque puro silenzio digitale, quindi resta impercettibile
-   all'orecchio, ma Chrome lo riconosce come audio attivo.
-   REGOLA: non fermare mai _silentEl mentre YT è attivo.
+   L'audio di YouTube vive in un iframe cross-origin: da solo non
+   garantisce che la notifica/lockscreen usi la MediaSession di questa
+   pagina (con i suoi handler prev/next) né che la tab resti "viva"
+   con lo schermo spento. L'ancora è un <audio> della PAGINA in loop,
+   con un segnale a livello bassissimo (≈ -54 dBFS, ~15 Hz,
+   volume 0.001: fisicamente inascoltabile ma non digitalmente nullo).
+
+   NOTA: il vecchio WAV inline aveva 0 campioni (chunk "data" di
+   lunghezza 0): un loop su durata zero termina subito, quindi
+   l'ancora di fatto non restava mai in riproduzione. Ora il WAV è
+   generato a runtime e dura 10 s (Chrome ignora i media troppo brevi
+   per la MediaSession).
+
+   REGOLA: l'ancora resta accesa anche quando l'utente mette in
+   PAUSA. Se la fermassimo subito, Android toglierebbe la notifica e
+   potrebbe scartare la tab a schermo spento (→ ripartenza da zero).
+   Viene fermata solo dopo _PAUSE_GRACE_MS di pausa ininterrotta.
    ═══════════════════════════════════════════════════════════════════ */
-const _SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAA'
-  + 'ZGF0YQAAAAA=';
+const _PAUSE_GRACE_MS = 30 * 60 * 1000; // 30 min di pausa → l'ancora si ferma
+
+function _makeSilentWavURL() {
+  const rate = 8000, seconds = 10, n = rate * seconds;
+  const buf  = new ArrayBuffer(44 + n * 2);
+  const v    = new DataView(buf);
+  const tag  = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+
+  tag(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true);
+  tag(8, 'WAVE'); tag(12, 'fmt ');
+  v.setUint32(16, 16, true);       // dimensione chunk fmt
+  v.setUint16(20, 1, true);        // PCM
+  v.setUint16(22, 1, true);        // mono
+  v.setUint32(24, rate, true);     // sample rate
+  v.setUint32(28, rate * 2, true); // byte rate
+  v.setUint16(32, 2, true);        // block align
+  v.setUint16(34, 16, true);       // bit per campione
+  tag(36, 'data'); v.setUint32(40, n * 2, true);
+
+  const half = Math.round(rate / 15 / 2); // onda quadra ~15 Hz, ampiezza ±64/32768
+  for (let i = 0; i < n; i++) {
+    v.setInt16(44 + i * 2, (Math.floor(i / half) % 2) ? 64 : -64, true);
+  }
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
 
 const _silentEl = new Audio();
-_silentEl.src    = _SILENT_WAV;
+_silentEl.src    = _makeSilentWavURL();
 _silentEl.loop   = true;
-_silentEl.volume = 0.001; // >0 per contare come "udibile" agli occhi del browser; il WAV è comunque silenzio puro
+_silentEl.volume = 0.001;
 
 _silentEl.onplay = () => _bindMediaSession();
 
+let _graceTimer = null;
+
 function _silentActivate() {
-  if (_silentEl.paused) {
-    _silentEl.play().catch(() => {});
-  }
+  clearTimeout(_graceTimer);
+  _graceTimer = null;
+  if (_silentEl.paused) _silentEl.play().catch(() => {});
   _bindMediaSession();
 }
 
 function _silentDeactivate() {
+  clearTimeout(_graceTimer);
+  _graceTimer = null;
   _silentEl.pause();
   _silentEl.currentTime = 0;
 }
 
 /** Ferma l'ancora solo se né il locale né YouTube stanno effettivamente suonando. */
 function _silentDeactivateIfFullyPaused() {
-  const localPlaying = !mediaEl.paused && !mediaEl.ended;
-  let ytPlaying = false;
-  if (store.currentYTId && store.ytReady && store.ytPlayer) {
-    try { ytPlaying = store.ytPlayer.getPlayerState() === YT.PlayerState.PLAYING; } catch { ytPlaying = false; }
+  if (!_isPlayingNow()) _silentDeactivate();
+}
+
+/** Chiamata quando locale/YT vanno in pausa: avvia il conto alla rovescia, senza fermare subito l'ancora. */
+function _silentOnPause() {
+  if (_isPlayingNow()) return;
+  clearTimeout(_graceTimer);
+  _graceTimer = setTimeout(_silentDeactivateIfFullyPaused, _PAUSE_GRACE_MS);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STATO / POSIZIONE (helper)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function _ytState() {
+  if (!store.ytReady || !store.ytPlayer) return null;
+  try { return store.ytPlayer.getPlayerState(); } catch { return null; }
+}
+
+const YT_STATE_PLAYING = 1; // YT.PlayerState.PLAYING (costante: `YT` può non essere ancora caricato)
+
+function _isPlayingNow() {
+  if (store.currentYTId) return _ytState() === YT_STATE_PLAYING;
+  return !mediaEl.paused && !mediaEl.ended;
+}
+
+/** Posizione corrente (s) del brano attivo, locale o YT. */
+function _currentPosition() {
+  if (store.currentYTId) {
+    if (store.ytReady && store.ytPlayer) {
+      try { return store.ytPlayer.getCurrentTime() || 0; } catch (_) { /* fallback */ }
+    }
+    return store.ytStartAt || 0;
   }
-  if (!localPlaying && !ytPlaying) _silentDeactivate();
+  return mediaEl.currentTime || 0;
+}
+
+function _seekToSeconds(sec) {
+  if (store.currentYTId) {
+    if (store.ytReady && store.ytPlayer) {
+      try { store.ytPlayer.seekTo(Math.max(0, sec), true); } catch (_) {}
+    }
+  } else if (store.currentIdx !== -1) {
+    const max = mediaEl.duration || Infinity;
+    mediaEl.currentTime = Math.min(max, Math.max(0, sec));
+  }
+}
+
+function _hasContent() {
+  return !!store.currentYTId || store.currentIdx !== -1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MEDIA SESSION (notifica / lockscreen / tasti cuffie e volante)
+   ═══════════════════════════════════════════════════════════════════ */
+
+function _setSessionState(playing) {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+  }
+}
+
+/** Aggiorna barra/posizione della notifica. duration non valida → azzera (niente barra finta). */
+function _setPosition(duration, position, rate = 1) {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    if (!(duration > 0)) { navigator.mediaSession.setPositionState(); return; }
+    navigator.mediaSession.setPositionState({
+      duration,
+      playbackRate: rate,
+      position: Math.min(Math.max(position || 0, 0), duration),
+    });
+  } catch (_) {}
+}
+
+/** Allinea la posizione della notifica al player attivo (da usare a pause/resume). */
+function _syncPosition() {
+  if (store.currentYTId) {
+    if (!store.ytReady || !store.ytPlayer) return;
+    try { _setPosition(store.ytPlayer.getDuration(), store.ytPlayer.getCurrentTime()); } catch (_) {}
+  } else if (mediaEl.duration > 0) {
+    _setPosition(mediaEl.duration, mediaEl.currentTime, mediaEl.playbackRate || 1);
+  }
+}
+
+/**
+ * Registra gli handler. Richiamata spesso (Brave tende ad azzerarli):
+ * è idempotente ed economica.
+ * seekbackward/seekforward NON sono registrati di proposito: su Android
+ * possono occupare gli slot compatti della notifica al posto di
+ * precedente/successivo. Lo scrub dalla notifica passa da `seekto`.
+ */
+function _bindMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  const ms  = navigator.mediaSession;
+  const set = (action, fn) => { try { ms.setActionHandler(action, fn); } catch (_) {} };
+
+  set('play',          () => play());
+  set('pause',         () => pause());
+  set('stop',          () => pause());
+  set('previoustrack', () => playPrev());
+  set('nexttrack',     () => { playNext(); });
+  set('seekto',        d => { if (d && isFinite(d.seekTime)) _seekToSeconds(d.seekTime); });
+}
+
+function _mediaSessionLocal(track, title) {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title,
+    artist:  track.folder.split('/').pop(),
+    artwork: [{ src: track.cover || 'https://placehold.co/512x512', sizes: '512x512', type: 'image/png' }],
+  });
+  _setSessionState(true);
+  _bindMediaSession();
+}
+
+function _mediaSessionYT(item, startSeconds, playing) {
+  if (!('mediaSession' in navigator)) return;
+
+  // Artwork sempre presente (anche dopo un ripristino senza thumb): serve
+  // per far comparire il widget grande dell'OS.
+  const thumb = item.thumb || `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`;
+
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title:   item.title,
+    artist:  item.uploader || 'YouTube',
+    album:   'YouTube Stream',
+    artwork: [
+      { src: thumb, sizes: '96x96',   type: 'image/jpeg' },
+      { src: thumb, sizes: '128x128', type: 'image/jpeg' },
+      { src: thumb, sizes: '192x192', type: 'image/jpeg' },
+      { src: thumb, sizes: '512x512', type: 'image/jpeg' },
+    ],
+  });
+
+  _setSessionState(playing);
+  _setPosition(item.duration, startSeconds); // durata reale da videos.list (se nota)
+  _bindMediaSession();
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -85,22 +253,21 @@ export function startYTSeekPoll() {
         seekSlider.value        = (cur / dur) * 100;
         timeCurrent.textContent = formatTime(cur);
         timeTotal.textContent   = formatTime(dur);
+        _setPosition(dur, cur);
 
-        if ('mediaSession' in navigator) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration:     dur,
-              playbackRate: 1,
-              position:     cur,
-            });
-          } catch (_) {}
+        // Durata non nota all'avvio: ora la conosciamo (serve a cronologia/persistenza).
+        if (store.currentYTItem && !store.currentYTItem.duration) {
+          store.currentYTItem.duration = Math.round(dur);
         }
       }
     } catch (_) {}
 
-    // Ri-registra i handler ogni ~5s (Brave li azzera spesso)
-    if (++_pollTick % 20 === 0) _bindMediaSession();
-
+    // Ogni ~5s: ri-registra gli handler (Brave li azzera spesso) e salva
+    // la posizione, così un'eventuale tab scartata riparte dal punto giusto.
+    if (++_pollTick % 5 === 0) {
+      _bindMediaSession();
+      saveState();
+    }
   }, 1000);
 }
 
@@ -125,6 +292,8 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
 
   store.currentYTId   = null;
   store.currentYTItem = null;
+  store.ytPending     = null; // un eventuale video YT in attesa dell'API non deve partire dopo
+  store.ytStartAt     = 0;
   store.currentIdx    = idx;
   store.lastManualIdx = idx;
 
@@ -138,16 +307,11 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
   _currentObjectURL = URL.createObjectURL(track.file);
   mediaEl.src = _currentObjectURL;
 
-  // Ancora silenziosa sempre attiva durante la riproduzione (anche locale):
-  // mantiene la tab "udibile" agli occhi del browser, così l'intera sessione
-  // resta esente dal throttling in background fin da subito, invece di
-  // attivarsi solo al primo cambio verso YouTube (quando potrebbe essere tardi).
+  // Ancora silenziosa sempre attiva durante la riproduzione (anche locale).
   _silentActivate();
 
   mediaEl.play().then(() => {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = 'playing';
-    }
+    _setSessionState(true);
     _bindMediaSession();
   }).catch(() => {});
 
@@ -166,7 +330,14 @@ export function playLocal(idx, { addHistory = true, fromBack = false } = {}) {
    YOUTUBE
    ═══════════════════════════════════════════════════════════════════ */
 
-export function playYT(item) {
+/**
+ * @param {object} item - { id, title, thumb?, uploader?, duration? }
+ * @param {{startSeconds?: number, cue?: boolean}} [opts]
+ *   startSeconds: da che secondo partire (ripristino sessione).
+ *   cue: carica il video SENZA avviarlo (l'autoplay dopo un reload è
+ *        comunque bloccato dal browser; l'utente preme play).
+ */
+export function playYT(item, { startSeconds = 0, cue = false } = {}) {
   if (store.currentYTId && store.currentYTItem && store.currentYTId !== item.id) {
     store.playHistory.push({ yt: true, ...store.currentYTItem });
   } else if (!store.currentYTId && store.currentIdx !== -1) {
@@ -186,41 +357,46 @@ export function playYT(item) {
   store.currentYTId   = item.id;
   store.currentYTItem = { ...item };
   store.currentIdx    = -1;
+  store.ytStartAt     = startSeconds;
 
+  const dur = item.duration || 0;
   titleEl.textContent     = item.title;
-  seekSlider.value        = 0;
-  timeCurrent.textContent = '0:00';
-  timeTotal.textContent   = '0:00';
+  seekSlider.value        = dur > 0 ? Math.min(100, (startSeconds / dur) * 100) : 0;
+  timeCurrent.textContent = formatTime(startSeconds);
+  timeTotal.textContent   = dur > 0 ? formatTime(dur) : '0:00';
 
   _ytWrapperVisible(true);
   _hideYTStuckMessage();
 
-  // Mantiene sveglio il Media Thread per il cambio in background
-  _silentActivate();
+  // Mantiene viva la sessione media (non in cue: l'autoplay sarebbe bloccato).
+  if (cue) _bindMediaSession(); else _silentActivate();
 
-  if (store.ytReady && store.ytPlayer) {
-    try {
-      store.ytPlayer.loadVideoById(item.id);
-      _watchdogStart(item.id);
-    } catch (_) {}
-  } else {
-    store.ytPending = item.id;
-    _ensureYTScript();
-  }
+  _loadYT({ id: item.id, startSeconds, cue });
 
   emit(EV.PLAYER_CHANGE);
-  saveState();
+  // Tempo/stato espliciti: getCurrentTime() qui è ancora quello del video precedente.
+  saveState({ time: startSeconds, paused: cue });
   emit(EV.VISUAL_UPDATE);
 
-  _mediaSessionYT(item);
-  if ('mediaSession' in navigator) {
+  _mediaSessionYT(item, startSeconds, !cue);
+}
+
+/** Carica (o mette in cue) un video nel player YT; se l'API non è pronta lo accoda. */
+function _loadYT({ id, startSeconds = 0, cue = false }) {
+  if (store.ytReady && store.ytPlayer) {
     try {
-      navigator.mediaSession.setPositionState({
-        duration:     0.1,
-        playbackRate: 1,
-        position:     0,
-      });
+      const args = { videoId: id, startSeconds };
+      if (cue) {
+        _watchdogStop();
+        store.ytPlayer.cueVideoById(args);
+      } else {
+        store.ytPlayer.loadVideoById(args);
+        _watchdogStart(id);
+      }
     } catch (_) {}
+  } else {
+    store.ytPending = { id, startSeconds, cue };
+    _ensureYTScript();
   }
 }
 
@@ -228,25 +404,30 @@ export function playYT(item) {
    CONTROLLI
    ═══════════════════════════════════════════════════════════════════ */
 
-export function togglePlay() {
+/** Avvia/riprende la riproduzione (esplicito: usato anche dalla MediaSession). */
+export function play() {
+  if (!_hasContent()) return;
+  _silentActivate();
   if (store.currentYTId) {
     if (!store.ytReady || !store.ytPlayer) return;
-    try {
-      const state = store.ytPlayer.getPlayerState();
-      if (state === YT.PlayerState.PLAYING) {
-        store.ytPlayer.pauseVideo();
-      } else {
-        _silentActivate();
-        store.ytPlayer.playVideo();
-      }
-    } catch (_) {}
+    try { store.ytPlayer.playVideo(); } catch (_) {}
   } else {
-    if (mediaEl.paused) {
-      mediaEl.play().catch(() => {});
-    } else {
-      mediaEl.pause();
-    }
+    mediaEl.play().catch(() => {});
   }
+}
+
+/** Mette in pausa (esplicito: usato anche dalla MediaSession). */
+export function pause() {
+  if (store.currentYTId) {
+    if (!store.ytReady || !store.ytPlayer) return;
+    try { store.ytPlayer.pauseVideo(); } catch (_) {}
+  } else {
+    mediaEl.pause();
+  }
+}
+
+export function togglePlay() {
+  if (_isPlayingNow()) pause(); else play();
 }
 
 export function seek(pct) {
@@ -260,27 +441,25 @@ export function seek(pct) {
   }
 }
 
+/** @returns {boolean} true se è partito un altro brano. */
 export function playNext() {
-  if (_dequeueNext()) return;
+  if (_dequeueNext()) return true;
 
   if (store.currentYTId) {
-    if (store.looping && store.ytReady && store.ytPlayer) {
-      try { store.ytPlayer.seekTo(0); store.ytPlayer.playVideo(); } catch (_) {}
-      return;
-    }
     if (store.shuffleMode > 0 && store.ytResults.length > 1) {
       const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
       let rndIdx;
       do { rndIdx = Math.floor(Math.random() * store.ytResults.length); }
       while (rndIdx === curIdx);
       playYT(store.ytResults[rndIdx]);
-      return;
+      return true;
     }
     const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
     if (curIdx !== -1 && curIdx + 1 < store.ytResults.length) {
       playYT(store.ytResults[curIdx + 1]);
+      return true;
     }
-    return;
+    return false;
   }
 
   let next = store.currentIdx + 1;
@@ -289,12 +468,19 @@ export function playNext() {
     const nxtPos = (curPos + 1) % store.shuffleOrder.length;
     next = store.shuffleOrder[nxtPos];
   }
-  if (next < store.playlist.length) playLocal(next);
+  if (next >= 0 && next < store.playlist.length) {
+    playLocal(next);
+    return true;
+  }
+  return false;
 }
 
 export function playPrev() {
-  if (!store.currentYTId && mediaEl.currentTime > 3) {
-    mediaEl.currentTime = 0;
+  if (!_hasContent()) return;
+
+  // Oltre i 3 s: "precedente" riparte dall'inizio (locale e YouTube).
+  if (_currentPosition() > 3) {
+    _seekToSeconds(0);
     return;
   }
 
@@ -304,7 +490,14 @@ export function playPrev() {
       store.currentYTId   = null;
       store.currentYTItem = null;
       store.currentIdx    = -1;
-      playYT({ id: prev.id, title: prev.title, thumb: prev.thumb, uploader: prev.uploader });
+      playYT({
+        type:     'youtube',
+        id:       prev.id,
+        title:    prev.title,
+        thumb:    prev.thumb,
+        uploader: prev.uploader,
+        duration: prev.duration,
+      });
       return;
     }
     playLocal(prev, { addHistory: false, fromBack: true });
@@ -317,8 +510,14 @@ export function playPrev() {
   }
   if (store.currentYTId && store.ytResults.length > 1) {
     const curIdx = store.ytResults.findIndex(r => r.id === store.currentYTId);
-    if (curIdx > 0) playYT(store.ytResults[curIdx - 1]);
+    if (curIdx > 0) {
+      playYT(store.ytResults[curIdx - 1]);
+      return;
+    }
   }
+
+  // Niente da cui tornare: riparti almeno dall'inizio del brano.
+  _seekToSeconds(0);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -333,35 +532,30 @@ mediaEl.ontimeupdate = () => {
   timeCurrent.textContent = formatTime(mediaEl.currentTime);
   timeTotal.textContent   = formatTime(mediaEl.duration);
 
-  if ('mediaSession' in navigator && mediaEl.duration > 0) {
-    try {
-      navigator.mediaSession.setPositionState({
-        duration:     mediaEl.duration,
-        playbackRate: mediaEl.playbackRate || 1,
-        position:     mediaEl.currentTime,
-      });
-    } catch (_) {}
-  }
+  _setPosition(mediaEl.duration, mediaEl.currentTime, mediaEl.playbackRate || 1);
 
   if (!_saveTimer) {
     _saveTimer = setTimeout(() => { saveState(); _saveTimer = null; }, 1000);
   }
 };
 
+// Se è attivo YouTube, play/pause del <video> nascosto sono effetti
+// collaterali del cambio brano (playYT fa mediaEl.pause()): non devono
+// toccare UI, sessione media o ancora.
 mediaEl.onplay = () => {
+  if (store.currentYTId) return;
   emit(EV.PLAYER_CHANGE, { playing: true });
-  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-  _bindMediaSession();
+  _setSessionState(true);
+  _silentActivate();
 };
 
 mediaEl.onpause = () => {
+  if (store.currentYTId) return;
   emit(EV.PLAYER_CHANGE, { playing: false });
-  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  _setSessionState(false);
+  _syncPosition();
   _bindMediaSession();
-  // Ferma l'ancora silenziosa solo se anche YT non sta suonando: se l'utente
-  // ha semplicemente messo in pausa il locale ma YT è attivo altrove nella
-  // sessione, l'ancora deve restare accesa.
-  _silentDeactivateIfFullyPaused();
+  _silentOnPause(); // l'ancora resta accesa per il periodo di grazia
 };
 
 mediaEl.onended = () => {
@@ -370,41 +564,39 @@ mediaEl.onended = () => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   WATCHDOG AVVIO YOUTUBE — sostituisce il vecchio "singolo setTimeout"
+   WATCHDOG AVVIO YOUTUBE
    ─────────────────────────────────────────────────────────────────
-   Perché serve: in background (schermo spento), Android/Chrome
-   rallentano e infine sospendono i setTimeout/setInterval. Un solo
-   tentativo isolato a 300ms può semplicemente non scattare mai.
-   Strategia:
+   In background (schermo spento) Android/Chrome rallentano e infine
+   sospendono i setTimeout/setInterval: un solo tentativo isolato può
+   non scattare mai.
    1. Retry con backoff crescente (300ms, 800ms, 2000ms, 4000ms) finché
       il player risulta PLAYING o si esauriscono i tentativi.
-   2. Un listener su `visibilitychange` forza subito un controllo/retry
-      non appena schermo o tab tornano attivi — è uno degli eventi che
-      il browser garantisce di consegnare anche dopo il throttling.
-   3. Se tutti i tentativi falliscono, mostra un messaggio "Riprova"
-      invece di lasciare il caricamento infinito silenzioso.
+   2. `visibilitychange` forza subito un controllo non appena
+      schermo/tab tornano attivi.
+   3. Se tutto fallisce, mostra "Riprova" invece di un caricamento
+      infinito silenzioso.
    ═══════════════════════════════════════════════════════════════════ */
 
-const _WATCHDOG_DELAYS = [300, 800, 2000, 4000]; // ms, crescenti (per stati davvero "fermi")
+const _WATCHDOG_DELAYS = [300, 800, 2000, 4000];
 const _BUFFERING_TIMEOUT_MS = 15000; // tempo massimo tollerato in BUFFERING continuo
 
-let _watchdogVideoId  = null;   // video per cui il watchdog è attivo
+let _watchdogVideoId  = null;
 let _watchdogTimer     = null;
 let _watchdogAttempt   = 0;
 let _watchdogStartTime = 0;
 
 function _watchdogStart(videoId) {
   _watchdogStop();
-  _watchdogVideoId  = videoId;
-  _watchdogAttempt  = 0;
+  _watchdogVideoId   = videoId;
+  _watchdogAttempt   = 0;
   _watchdogStartTime = Date.now();
   _watchdogScheduleNext();
 }
 
 function _watchdogStop() {
   if (_watchdogTimer) { clearTimeout(_watchdogTimer); _watchdogTimer = null; }
-  _watchdogVideoId  = null;
-  _watchdogAttempt  = 0;
+  _watchdogVideoId   = null;
+  _watchdogAttempt   = 0;
   _watchdogStartTime = 0;
 }
 
@@ -413,8 +605,7 @@ function _watchdogScheduleNext() {
     _showYTStuckMessage();
     return;
   }
-  const delay = _WATCHDOG_DELAYS[_watchdogAttempt];
-  _watchdogTimer = setTimeout(() => _watchdogCheck(), delay);
+  _watchdogTimer = setTimeout(() => _watchdogCheck(), _WATCHDOG_DELAYS[_watchdogAttempt]);
 }
 
 /** Verifica se il video è partito; se no, ritenta play e pianifica il prossimo controllo. */
@@ -426,18 +617,14 @@ function _watchdogCheck() {
   let state;
   try { state = store.ytPlayer.getPlayerState(); } catch { state = null; }
 
-  // PLAYING: partito, nessun altro tentativo necessario.
   if (state === YT.PlayerState.PLAYING) {
     _watchdogStop();
     return;
   }
 
-  // BUFFERING: sta caricando normalmente — richiamare playVideo() qui
-  // rischia di interrompere/riavviare il buffering in corso, che è
-  // probabilmente la causa per cui il video sembrava "non partire mai".
-  // Non consumiamo tentativi, ma applichiamo comunque un tetto massimo
-  // di tempo totale, altrimenti una rete lenta terrebbe il watchdog in
-  // attesa per sempre senza mai avvisare l'utente.
+  // BUFFERING: caricamento normale — richiamare playVideo() rischia di
+  // riavviare il buffering. Non consumiamo tentativi, ma c'è un tetto
+  // massimo di tempo, oltre il quale avvisiamo l'utente.
   if (state === YT.PlayerState.BUFFERING) {
     if (Date.now() - _watchdogStartTime > _BUFFERING_TIMEOUT_MS) {
       _showYTStuckMessage();
@@ -447,17 +634,20 @@ function _watchdogCheck() {
     return;
   }
 
-  // Solo per stati realmente "fermi" (UNSTARTED, CUED, PAUSED, o stato
-  // illeggibile) ha senso forzare di nuovo playVideo().
+  // Solo per stati realmente "fermi" ha senso forzare di nuovo playVideo().
   _watchdogAttempt++;
   try { store.ytPlayer.playVideo(); } catch (_) {}
   _watchdogScheduleNext();
 }
 
-/** Forza un controllo immediato quando schermo/tab tornano visibili. */
+/** Schermo/tab tornano visibili: ri-registra la sessione media e riallinea il watchdog. */
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && _watchdogVideoId) {
+  if (document.visibilityState !== 'visible') return;
+  _bindMediaSession();
+  if (_watchdogVideoId) {
     _watchdogCheck();
+  } else if (_hasContent()) {
+    _setSessionState(_isPlayingNow());
   }
 });
 
@@ -476,7 +666,7 @@ function _showYTStuckMessage() {
       _hideYTStuckMessage();
       if (id && store.ytPlayer) {
         try {
-          store.ytPlayer.loadVideoById(id);
+          store.ytPlayer.loadVideoById({ videoId: id, startSeconds: store.ytStartAt || 0 });
           _watchdogStart(id);
         } catch (_) {}
       }
@@ -503,14 +693,12 @@ window.onYouTubeIframeAPIReady = () => {
     events: {
       onReady: () => {
         store.ytReady = true;
-        if (store.ytPending) {
-          store.ytPlayer.loadVideoById(store.ytPending);
-          _watchdogStart(store.ytPending);
-          store.ytPending = null;
-        }
+        const pending = store.ytPending;
+        store.ytPending = null;
+        if (pending) _loadYT(pending);
       },
       onError: (e) => {
-        // Se un video YT fallisce (es. non disponibile o limitazione age), passa al successivo
+        // Video non disponibile / limitazioni: passa al successivo
         console.warn('YouTube Player error:', e.data);
         _watchdogStop();
         _hideYTStuckMessage();
@@ -523,19 +711,24 @@ window.onYouTubeIframeAPIReady = () => {
           _silentActivate();
           _watchdogStop();
           _hideYTStuckMessage();
-          if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'playing';
-            _bindMediaSession();
-          }
+          _setSessionState(true);
+          _syncPosition();
+          _bindMediaSession();
         }
 
-        if (e.data === YT.PlayerState.PAUSED) {
+        if (e.data === YT.PlayerState.PAUSED && store.currentYTId) {
           stopYTSeekPoll();
-          if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'paused';
-            _bindMediaSession();
-          }
-          _silentDeactivateIfFullyPaused();
+          _setSessionState(false);
+          _syncPosition();
+          _bindMediaSession();
+          saveState();      // posizione esatta al momento della pausa
+          _silentOnPause(); // l'ancora resta accesa per il periodo di grazia
+        }
+
+        // CUED: ripristino sessione (o stop): in pausa, pronto a ripartire.
+        if (e.data === YT.PlayerState.CUED && store.currentYTId) {
+          _setSessionState(false);
+          _bindMediaSession();
         }
 
         if (e.data === YT.PlayerState.ENDED) {
@@ -543,8 +736,7 @@ window.onYouTubeIframeAPIReady = () => {
           if (store.looping && store.ytReady && store.ytPlayer) {
             try { store.ytPlayer.seekTo(0); store.ytPlayer.playVideo(); } catch (_) {}
           } else {
-            // Delay minimo prima di chiamare la traccia successiva
-            // per permettere alla MediaSession di sincronizzarsi
+            // Delay minimo per permettere alla MediaSession di sincronizzarsi
             setTimeout(() => playNext(), 50);
           }
         }
@@ -584,89 +776,4 @@ function _ensureYTScript() {
 
 function _fileTitle(file) {
   return file.name.replace(/\.[^/.]+$/, '');
-}
-
-function _mediaSessionLocal(track, title) {
-  if (!('mediaSession' in navigator)) return;
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title,
-    artist:  track.folder.split('/').pop(),
-    artwork: [{ src: track.cover || 'https://placehold.co/512x512', sizes: '512x512', type: 'image/png' }],
-  });
-  navigator.mediaSession.playbackState = 'playing';
-  _bindMediaSession();
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   MEDIA SESSION FORZATA (Notifiche & Lockscreen)
-   ═══════════════════════════════════════════════════════════════════ */
-
-function _mediaSessionYT(item) {
-  if (!('mediaSession' in navigator)) return;
-
-  // 1. Forza la presenza dell'Artwork per far attivare il widget grande dell'OS
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title:   item.title,
-    artist:  item.uploader || 'YouTube',
-    album:   'YouTube Stream',
-    artwork: item.thumb
-      ? [
-          { src: item.thumb, sizes: '96x96',   type: 'image/jpeg' },
-          { src: item.thumb, sizes: '128x128', type: 'image/jpeg' },
-          { src: item.thumb, sizes: '192x192', type: 'image/jpeg' },
-          { src: item.thumb, sizes: '512x512', type: 'image/jpeg' },
-        ]
-      : []
-  });
-
-  // 2. Forza lo stato a PLAYING (sblocca l'interfaccia notifica)
-  navigator.mediaSession.playbackState = 'playing';
-
-  // 3. Imposta una posizione iniziale fittizia per obbligare Chrome/Brave
-  // a mostrare la barra di avanzamento e i pulsanti prev/next
-  try {
-    navigator.mediaSession.setPositionState({
-      duration:     item.duration || 180, // Se non c'è durata, usa un placeholder di 3 min
-      playbackRate: 1,
-      position:     0,
-    });
-  } catch (_) {}
-
-  _bindMediaSession();
-}
-
-function _bindMediaSession() {
-  if (!('mediaSession' in navigator)) return;
-  const ms = navigator.mediaSession;
-
-  ms.setActionHandler('play',          () => togglePlay());
-  ms.setActionHandler('pause',         () => togglePlay());
-  ms.setActionHandler('previoustrack', () => playPrev());
-  ms.setActionHandler('nexttrack',     () => playNext());
-
-  // seekforward/seekbackward: su Android/Brave abilitare questi due handler
-  // costringe l'OS a mostrare i controlli estesi.
-  ms.setActionHandler('seekbackward', () => {
-    if (store.currentYTId && store.ytPlayer) {
-      try {
-        const cur = store.ytPlayer.getCurrentTime() || 0;
-        store.ytPlayer.seekTo(Math.max(0, cur - 10), true);
-      } catch (_) {}
-    } else {
-      mediaEl.currentTime = Math.max(0, mediaEl.currentTime - 10);
-    }
-  });
-
-  ms.setActionHandler('seekforward', () => {
-    if (store.currentYTId && store.ytPlayer) {
-      try {
-        const cur = store.ytPlayer.getCurrentTime() || 0;
-        store.ytPlayer.seekTo(cur + 10, true);
-      } catch (_) {}
-    } else {
-      mediaEl.currentTime = Math.min(mediaEl.duration || 0, mediaEl.currentTime + 10);
-    }
-  });
-
-  try { ms.setActionHandler('stop', () => togglePlay()); } catch (_) {}
 }

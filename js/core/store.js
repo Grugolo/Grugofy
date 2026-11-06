@@ -23,7 +23,8 @@ export const store = {
   // YouTube
   ytPlayer:      null,
   ytReady:       false,
-  ytPending:     null,  // videoId da caricare quando ytPlayer è pronto
+  ytPending:     null,  // { id, startSeconds, cue } da caricare quando ytPlayer è pronto
+  ytStartAt:     0,     // secondo di partenza del video YT corrente (per salvataggio sessione)
   currentYTId:   null,
   currentYTItem: null,  // oggetto YT corrente (per cronologia e shuffle)
   ytResults:     [],
