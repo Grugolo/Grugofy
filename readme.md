@@ -9,9 +9,9 @@ Player musicale mobile-first per browser, senza backend. Riproduce file locali (
 - **Coda** — aggiungi brani con swipe (sinistra = in fondo, destra = in cima); riordino drag & drop
 - **Playlist** — salva coda o cronologia come playlist locale (localStorage); importa/esporta come .txt/.zip
 - **Player espanso** — visualizza cover/video; swipe verticale chiude, orizzontale cambia brano; long-press 2× velocità; doppio tap seek ±5/10s
-- **MediaSession** — controlli sistema (notifica Android/iOS); compatibile Brave mobile tramite silent anchor WAV
+- **MediaSession** — controlli sistema (notifica Android/iOS): play/pausa, precedente, successivo, scrub (`seekto`). Silent anchor generato a runtime (WAV 10 s a livello bassissimo), mantenuto acceso anche in pausa per 30 min così la notifica non sparisce
 - **Shuffle / Loop** — shuffle con ordine precalcolato; loop singolo brano
-- **Persistenza sessione** — stato (coda, brano corrente, posizione) salvato in localStorage al cambio traccia
+- **Persistenza sessione** — stato (coda, brano corrente, posizione) salvato in localStorage al cambio traccia, ogni ~5 s durante la riproduzione YT, in pausa e quando la pagina va in background; al reload il brano YT riprende in cue dal minuto salvato
 
 ## Struttura
 
@@ -35,7 +35,7 @@ Grugofy-main/
 │   ├── modules/
 │   │   ├── localFiles.js  # Caricamento cartella, cover, durata, ingest condiviso (input + drag&drop)
 │   │   ├── youtube.js     # Ricerca YT e render risultati
-│   │   ├── ytApi.js       # Helper condiviso: fetch YT con fallback multi-chiave
+│   │   ├── ytApi.js       # Helper condiviso: fetch YT con fallback multi-chiave + fetchDurations (videos.list, cache)
 │   │   └── lyrics.js      # Lyrics sincronizzati (lrclib.net), overlay su player YT
 │   └── ui/
 │       ├── controls.js       # Player bar, icone SVG, updateUI
@@ -45,109 +45,10 @@ Grugofy-main/
 │       └── settingsModal.js  # Modale "⚙": impostazioni
 ```
 
-### Wiring tra moduli (novità)
 
-`player.js` e `queue.js` avevano una dipendenza circolare risolta prima con
-`import()` dinamici sparsi nel codice. Ora nessuno dei due importa
-direttamente l'altro: `main.js` li collega esplicitamente all'avvio con
-`wireQueue()` e `wirePlayback()`. Stesso principio per `queue.js` → UI
-(`wireQueueUI()`), al posto di `import('../ui/queueUI.js')` inline.
-
-Vantaggio: leggendo `main.js` si vede subito chi dipende da chi, senza dover
-grep-are import dinamici sparsi nei vari file.
-
-## Avvio
-
-Nessun build step. Apri `index.html` con un server locale (es. `npx serve .` oppure Live Server in VS Code). Non funziona da `file://` per via dei moduli ES e della File System Access API.
-
-## Config
-
-In `js/config.js` sostituisci le stringhe in `YT_API_KEY` con le tue chiavi da [Google Cloud Console](https://console.cloud.google.com/) (API YouTube Data v3). Puoi mettere una sola chiave o un array: se una finisce la quota, l'app prova automaticamente la successiva.
-
-## Formato file playlist (.txt)
-
-```
-Nome brano, ID_o_percorso, durata_secondi
-```
-Esempio:
-```
-Bohemian Rhapsody, dQw4w9WgXcQ, 354
-My Song, NomeFile.mp3, 210
-```
-Se una riga contiene solo il nome (senza virgole), viene cercata su YouTube e viene caricato il primo risultato.
-
-## Compatibilità
-
-Testato su Chrome/Brave mobile (Android). Richiede browser con supporto ES Modules, File API, MediaSession API.
-
-## Changelog fix (refactor)
-- **Bug**: `fmtDateShort()` in `utils.js` usava variabili mai definite (`m`, `g` invece di `mm`, `gg`) → `ReferenceError` ogni volta che si mostrava la data di pubblicazione di un video YouTube. Corretto.
-- **Bug**: l'import di una playlist `.txt` con righe di solo testo cercava su YouTube passando `YT_API_KEY` (un array) direttamente in query string invece di provare le chiavi una a una → ricerca sempre fallita. Ora usa lo stesso helper `ytApi.js` con fallback multi-chiave usato dalla ricerca normale.
-- **Bug**: `js/ui/library.js` era codice morto — cercava un elemento `#libraryList` mai esistito in `index.html` (l'id reale è `#library`), non veniva mai importato da `main.js`, e ascoltava un evento `libraryUpdate` mai emesso da nessuna parte. Rimosso: la libreria è gestita interamente da `localFiles.js`.
-- **Bug**: `controls.js` registrava due listener sullo stesso evento `PLAYER_CHANGE` che chiamavano entrambi `updateUI()` con argomenti diversi in sequenza → doppio render e possibile race sull'ultimo stato applicato. Ridotto a un solo listener.
-- **Pulizia**: JSZip era caricato sia come `<script>` globale (cdnjs) sia come import ESM da `esm.sh` in `queue.js`. Tenuta solo la versione globale da cdnjs; rimosso l'import ESM ridondante.
-- **Refactor**: eliminate le dipendenze circolari mascherate da `import()` dinamici tra `player.js` ↔ `queue.js` e tra `queue.js` ↔ `ui/queueUI.js`. Sostituite con un wiring esplicito in `main.js` (`wireQueue`, `wirePlayback`, `wireQueueUI`).
-- **Refactor**: estratto `js/modules/ytApi.js` con la logica di fetch-con-fallback-chiavi, prima duplicata identica sia in `youtube.js` che in `queue.js`.
-- **Refactor**: `store.js` ora espone anche `setState(patch)` per mutazioni tracciabili via evento `STATE_CHANGE`, oltre alla scrittura diretta già usata internamente dai moduli core.
-
-## Nuove funzionalità (round 2)
-
-- **Drag & drop desktop** (`localFiles.js`): trascina file o intere cartelle sulla finestra del browser. Usa `DataTransferItem.webkitGetAsEntry()` per leggere l'albero delle cartelle trascinate, poi confluisce nella stessa pipeline `ingestFiles()` usata dall'`<input>` classico.
-- **Modale "+" per import** (`ui/importModal.js`, markup in `index.html`): scegli tra file locali (audio/video/playlist .txt) o incolla un link YouTube (video singolo o playlist intera). L'input file storico resta funzionante, ora nascosto e attivato dal bottone nella modale.
-- **Import playlist/video da link YouTube** (`fetchYouTubeItemsFromUrl` in `core/queue.js`): riconosce sia URL di singolo video sia URL con `?list=`. Le playlist vengono scaricate paginando `playlistItems.list` (50 elementi a chiamata, costo 1 unità/pagina) — nessun limite artificiale, l'intera playlist viene importata. I video privati o rimossi vengono scartati automaticamente. Le durate sono recuperate in blocchi da 50 id tramite `videos.list`.
-- **Tracking quota YouTube** (`modules/ytApi.js`): ogni chiamata API logga in console il costo reale in "unità" (search=100, playlistItems/videos=1) e il totale giornaliero salvato in localStorage — solo diagnostico, non mostrato in UI.
-- **Shuffle a 3 stadi** (`store.shuffleMode`: 0/1/2): 0 = spento (grigio), 1 = shuffle brani libreria/playlist YT (verde), 2 = shuffle libreria **+** coda (rosso). In stadio 2 `dequeueNext()` in `core/queue.js` pesca una posizione casuale della coda invece della prima — la coda non si riordina visivamente, ma i brani già estratti/riprodotti spariscono dalla lista come di consueto. L'ordine casuale viene rigenerato ogni volta che il pulsante viene premuto.
-- **Toggle player con click su now-playing**: `togglePlayer()` ora è un vero toggle bidirezionale (prima apriva sempre, mai chiudeva). Bug corretto in `ui/expandedPlayer.js`.
-- **Player YouTube ridimensionabile** (`ui/expandedPlayer.js` + CSS): handle di drag (mouse e touch, via Pointer Events) sotto il player YT nell'expanded view; l'altezza scelta (25–100% dell'altezza disponibile) è salvata in localStorage e ripristinata alle sessioni successive.
-- **Lyrics sincronizzati** (`modules/lyrics.js`): interroga l'API pubblica e gratuita [lrclib.net](https://lrclib.net) (nessuna chiave richiesta) per testi in formato LRC sincronizzati al millisecondo. Overlay in basso sul player YouTube espanso, sopra la progress bar nativa di YouTube. Per i brani locali il nome file viene euristicamente separato in "Artista - Titolo"; per YouTube si usa `uploader` + `title` ripulito da tag tipo "(Official Video)". Se lrclib non trova un match esatto, tenta una ricerca libera come fallback; se non trova comunque nulla, la riga resta semplicemente nascosta (nessun testo placeholder).
-
-### Note tecniche sulla quota YouTube
-
-Le API YouTube Data v3 hanno un budget di **10.000 unità/giorno** per progetto (si resetta a mezzanotte Pacific Time). Costi reali:
-- `search.list` (ricerca testuale) → **100 unità** — quindi ~100 ricerche testuali esauriscono l'intera quota
-- `playlistItems.list` / `videos.list` → **1 unità per pagina** (fino a 50 elementi) — importare anche playlist molto grandi costa pochissimo
-
-Per questo l'import da link YouTube (playlist o video) non applica alcun limite: al massimo costa qualche unità anche per centinaia di brani. La ricerca a testo libero (barra di ricerca, o playlist `.txt` con nomi anziché ID/URL) resta invece l'operazione più "costosa" e va usata con più parsimonia se si dispone di una sola chiave API.
-
-## Fix (round 3)
-
-- **Service worker riscritto** (`service-worker.js`): la versione precedente era cache-first puro con path hardcoded (`/Jukebox/...`), quindi serviva sempre gli stessi file vecchi anche dopo un deploy, e si rompeva se il progetto veniva hostato con un nome cartella diverso. Ora usa path relativi (funziona con qualsiasi nome repo/cartella), invalida automaticamente la cache delle versioni precedenti (`CACHE_VERSION`), ed è network-first per JS/HTML/CSS — i file di sviluppo sono sempre aggiornati, la cache serve solo da fallback offline.
-- **Riordino/aggiunta coda utilizzabile da desktop**: il vecchio meccanismo era solo touch (`touchstart/touchmove`), quindi inutilizzabile con mouse. Aggiunto un bottone "+" esplicito su ogni traccia della libreria (click per aggiungere in fondo, Ctrl/Cmd+click per aggiungere in cima) e frecce su/giù nella coda per riordinare — funzionano identicamente con mouse o touch. Lo swipe touch resta disponibile in aggiunta su mobile.
-- **Import multi-link YouTube**: il campo era un `<input>` a singola riga. Ora è una `<textarea>` che accetta più URL (uno per riga, video o playlist), processati in sequenza con indicatore di progresso.
-- **Player YouTube ridimensionabile — bug CSS risolto**: `#ytWrapper` usava `inset: 0`, che fissa contemporaneamente `top` e `bottom` rendendo qualunque `height` personalizzata priva di effetto. Corretto liberando `bottom` in modalità `.resizable`. Il resize ora funziona davvero; altezza di default portata al 60%.
-- **Caricamento/blocco video YouTube in background — watchdog di ripristino** (`core/player.js`): il vecchio codice tentava un solo `setTimeout` isolato a 300ms per forzare la partenza del video quando lo schermo è spento. Poiché Android/Chrome rallentano e infine sospendono i timer in background, un singolo tentativo può semplicemente non scattare mai — da qui i casi di video "bloccato in caricamento per sempre". Sostituito con:
-  - retry automatico a backoff crescente (300ms, 800ms, 2s, 4s) finché il player risulta effettivamente `PLAYING`;
-  - un listener su `visibilitychange` che forza un controllo immediato non appena schermo o tab tornano attivi (uno dei pochi eventi che il browser garantisce di consegnare anche dopo il throttling);
-  - se tutti i tentativi falliscono, un messaggio esplicito "Il video non parte" con pulsante Riprova sovrapposto al player, invece del caricamento infinito silenzioso di prima.
-
-  Questo non elimina il throttling imposto dal sistema operativo/browser (nessun sito può farlo), ma trasforma un singolo tentativo silenzioso in un sistema che si ripara da solo appena possibile, e che avverte l'utente quando non ci riesce.
-
-## Fix (round 4): watchdog che interferiva col buffering normale
-
-Il watchdog introdotto nel round precedente chiamava `playVideo()` ad ogni check che non trovasse il player già in `PLAYING` — incluso lo stato `BUFFERING`, che è la fase normale e attesa tra "video richiesto" e "video partito". Richiamare `playVideo()` mentre l'IFrame sta ancora bufferando può interrompere/riavviare il caricamento in corso, che è probabilmente la causa per cui alcuni video sembravano "non partire mai": ogni volta che stavano per finire di bufferare, il watchdog li disturbava di nuovo.
-
-Corretto in `core/player.js`:
-- **`BUFFERING` non consuma più tentativi né richiama `playVideo()`** — il watchdog aspetta in silenzio, ricontrollando ogni secondo.
-- Aggiunto un **timeout massimo separato** (15s) per il solo stato `BUFFERING`: se una rete lenta tiene il video in buffering per troppo tempo, scatta comunque il messaggio "riprova" invece di aspettare all'infinito.
-- Il `playVideo()` forzato resta riservato ai soli stati realmente "fermi" (`UNSTARTED`, `CUED`, `PAUSED` inatteso, o stato illeggibile) — cioè i casi in cui il player è davvero bloccato, non semplicemente al lavoro.
-
-### Nota su architetture alternative (SimpMusic e simili)
-
-App come SimpMusic non usano l'IFrame embed di YouTube: estraggono l'URL dello stream audio/video diretto tramite le API interne di YouTube e lo riproducono con un player nativo (es. ExoPlayer), bypassando completamente l'iframe. Questo è ciò che permette loro crossfade, gapless e controllo fine del buffering — hanno il file in mano, esattamente come i brani locali di questo progetto.
-
-Replicare questo approccio qui richiederebbe un backend dedicato all'estrazione degli stream (reverse-engineering delle API interne di YouTube, soggette a modifiche periodiche e a contromisure anti-scraping) ed è **esplicitamente vietato dai Termini di Servizio di YouTube** per client non ufficiali. Per questo il progetto resta sull'IFrame API ufficiale, accettando i suoi limiti (nessun controllo sul buffering, nessun preload reale) in cambio di piena conformità e nessuna dipendenza da infrastrutture esterne fragili.
-
-
-## Round 5
-
-- **Ancora silenziosa corretta** (`core/player.js`): la documentazione Chrome indica che gli stream audio silenziosi non ottengono l'esenzione dal throttling in background. `_silentEl` aveva `volume = 0`; ora è `0.001` (il contenuto WAV resta silenzio puro, quindi non si sente nulla). L'ancora ora parte con qualsiasi riproduzione (anche locale) e si ferma solo quando né locale né YouTube stanno suonando (`_silentDeactivateIfFullyPaused`). Effetto collaterale: la tab mostra sempre l'icona audio durante l'ascolto. Non è una garanzia assoluta: dipende da versione/politiche di Chrome/Brave e da Android.
-- **Import da textarea con formati misti** (`ui/importModal.js` + `parseLinesToQueueItems` in `core/queue.js`): ogni riga può essere un link YouTube (video o playlist intera), una riga CSV `Titolo, ytid, durata`, oppure un semplice titolo, cercato su YouTube.
-- **Preferenza audio ufficiale**: per le righe di solo testo, si guardano i primi 5 risultati e si sceglie quello con canale "- Topic" o titolo con "official audio"/"audio ufficiale"; se nessuno corrisponde si usa il primo risultato. Vale anche per i file `.txt` importati.
-- **Menu ⚙** (`ui/settingsModal.js`, `core/settings.js`): ritardo ricerca durante la digitazione (100–1500 ms), interruttore provider YouTube (se spento la ricerca YouTube non parte), interruttore preferenza audio ufficiale. Salvate in localStorage.
-- **Non implementato (rimandato come richiesto)**: formato playlist con URL completo al posto del solo ytid.
-- Service worker: `CACHE_VERSION` portata a `grugofy-v3` per forzare l'aggiornamento.
 
 ### Limiti noti
 - Righe CSV che puntano a file locali (`Titolo, NomeFile.mp3`) sono gestite solo nell'import di file `.txt` dalla libreria, non nella textarea (lì la libreria potrebbe non essere caricata).
-- Le voci trovate per testo non hanno la durata (richiederebbe una chiamata `videos.list` in più).
+- Dopo un reload della pagina il video YT riparte in pausa dal minuto salvato (l'autoplay senza gesto è bloccato dal browser).
+- I brani locali in coda non vengono ripristinati dopo un reload (i `File` non sono persistibili).
 - Il toggle "provider" oggi controlla solo la ricerca YouTube; riproduzione e import da link restano attivi.
