@@ -126,22 +126,23 @@ window.addEventListener('load', () => {
           title:    item.title,
           thumb:    `https://img.youtube.com/vi/${item.id}/mqdefault.jpg`,
           duration: item.duration || 0,
+          uploader: item.uploader || '',
         });
       }
     });
 
     if (state.current?.ytId) {
+      // Ripristino: stesso brano, stesso minuto, in pausa (l'autoplay dopo
+      // un reload è bloccato dal browser: l'utente preme play).
+      const saved = state.current.ytItem || {};
       playYT({
-        id:    state.current.ytId,
-        title: state.current.title || 'YouTube',
-      });
-
-      setTimeout(() => {
-        try {
-          store.ytPlayer.seekTo(state.current.time || 0);
-          if (state.current.paused) store.ytPlayer.pauseVideo();
-        } catch {}
-      }, 1000);
+        type:     'youtube',
+        id:       state.current.ytId,
+        title:    state.current.title || saved.title || 'YouTube',
+        thumb:    saved.thumb || `https://img.youtube.com/vi/${state.current.ytId}/mqdefault.jpg`,
+        uploader: saved.uploader || '',
+        duration: saved.duration || 0,
+      }, { startSeconds: state.current.time || 0, cue: true });
     }
 
     renderQueue();
